@@ -1,0 +1,11 @@
+parameters: 
+  ros__parameters:
+    values:
+      bool_v: True
+      int_v: 2
+      dbl_v: 02.0
+      str_v: 'Tsai'
+    bool_arr_v: [True, True]
+    int_arr_v: [8,0,2]
+    dbl_arr_v: [4.0, 0.0, 1.0]
+    str_arr_v: ['Ho', 'Hsun', 'Tsai']
