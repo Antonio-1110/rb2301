@@ -24,6 +24,7 @@ class ObstacleAvoidanceNode(Node):
         self.last_scan = None # Copied laser scan message
 
         self.timer = self.create_timer(0.05, self.timer_callback)  # Runs at 20Hz. Can be changed.
+        self.cul_y = 0
 
     def move_2D(self, x:float=0.0, y:float=0.0, turn:float=0.0):
         twist_msg = Twist()
@@ -32,13 +33,12 @@ class ObstacleAvoidanceNode(Node):
         turn = np.clip(turn, -max_translate_velocity*2, max_translate_velocity*2)
         twist_msg.linear.x, twist_msg.linear.y, twist_msg.linear.z = float(x), float(y), 0.0
         twist_msg.angular.x, twist_msg.angular.y, twist_msg.angular.z = 0.0, 0.0, float(turn)
-        self.last_x = x
-        self.last_y = y
-        self.publisher_.publish(twist_msg)
+        self.cul_y += y
+        self.pub_cmd_vel.publish(twist_msg)
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
-        self.last_scan = np.array(msg.ranges)[::10] # Slices the 721 scan array to return only 36 scans. Feel free to edit
+        self.last_scan = np.array(msg.ranges) # Slices the 721 scan array to return only 36 scans. Feel free to edit
 
     def timer_callback(self):
         """Controller loop"""
@@ -47,27 +47,26 @@ class ObstacleAvoidanceNode(Node):
             return # Does not run if the laser message is not received.
         
         ######################## MODIFY CODE HERE ########################
-        front = np.concatenate((self.last_scan[65:],self.last_scan[:-64]))
-        left = self.last_scan[12:25]
-        right = self.last_scan[47:60]
-        self.get_logger().debug(str(min(front)))
-        if min(front) < 0.3:
-            if self.last_x == 0 and self.last_y != 0:
-                self.get_logger().debug("1")
-                return
-            l = min(left)
-            r = min(right)
-            if l > r and l > 0.2:
-                self.move_2D(0.0,0.2,0.0)
-            elif r > l and r > 0.2:
-                self.move_2D(0.0,-0.2,0.0)
-            elif r == l and r > 0.2:
-                self.move_2D(0.0,-0.2,0.0)
+        
+        l_front = self.last_scan[:61]
+        r_front = self.last_scan[660:]
+        l_diag = self.last_scan[60:121]
+        r_diag = self.last_scan[600:661]
+        u_left = self.last_scan[120:181]
+        u_right = self.last_scan[540:601]
+        d_left = self.last_scan[180:241]
+        d_right = self.last_scan[480:541] 
+        self.get_logger().debug(str(min(l_front)) + " / "+ str(min(r_front)))
+        self.get_logger().debug(str(self.last_y))
+        if min(l_front) < 0.3 or min(r_front) < 0.3:
+            if min(u_left) > 0.3:
+                self.move_2D(0.0, 0.4, 0.0)
+            elif self.cul_y > 0:
+                self.move_2D(0.0, -0.4, 0.0)
             else:
-                self.get_logger().debug("stuck")
-                self.move_2D(0.0,0.0,0.0)
+                self.move_2D(0.0, 0.4, 0.0)
         else:
-            self.move_2D(0.2, 0.0, 0.0)
+            self.move_2D(0.4, 0.0, 0.0)
 
         ######################## MODIFY CODE HERE ########################
 
