@@ -24,7 +24,7 @@ class ObstacleAvoidanceNode(Node):
         self.last_scan = None # Copied laser scan message
 
         self.timer = self.create_timer(0.05, self.timer_callback)  # Runs at 20Hz. Can be changed.
-        self.cul_y = 0
+        self.last = 0.0
 
     def move_2D(self, x:float=0.0, y:float=0.0, turn:float=0.0):
         twist_msg = Twist()
@@ -33,7 +33,6 @@ class ObstacleAvoidanceNode(Node):
         turn = np.clip(turn, -max_translate_velocity*2, max_translate_velocity*2)
         twist_msg.linear.x, twist_msg.linear.y, twist_msg.linear.z = float(x), float(y), 0.0
         twist_msg.angular.x, twist_msg.angular.y, twist_msg.angular.z = 0.0, 0.0, float(turn)
-        self.cul_y += y
         self.pub_cmd_vel.publish(twist_msg)
 
     def sub_scan_callback(self, msg):
@@ -48,25 +47,50 @@ class ObstacleAvoidanceNode(Node):
         
         ######################## MODIFY CODE HERE ########################
         
-        l_front = self.last_scan[:61]
-        r_front = self.last_scan[660:]
-        l_diag = self.last_scan[60:121]
-        r_diag = self.last_scan[600:661]
-        u_left = self.last_scan[120:181]
-        u_right = self.last_scan[540:601]
-        d_left = self.last_scan[180:241]
-        d_right = self.last_scan[480:541] 
-        self.get_logger().debug(str(min(l_front)) + " / "+ str(min(r_front)))
-        self.get_logger().debug(str(self.last_y))
-        if min(l_front) < 0.3 or min(r_front) < 0.3:
-            if min(u_left) > 0.3:
-                self.move_2D(0.0, 0.4, 0.0)
-            elif self.cul_y > 0:
-                self.move_2D(0.0, -0.4, 0.0)
-            else:
-                self.move_2D(0.0, 0.4, 0.0)
+        # l_front = self.last_scan[:61] #0-30
+        # r_front = self.last_scan[660:] #330-360
+        # l_diag = self.last_scan[60:121] #30-60
+        # r_diag = self.last_scan[600:661] #300-330
+        # u_left = self.last_scan[120:181] #60-90
+        # u_right = self.last_scan[540:601] #270-300
+        # d_left = self.last_scan[180:241] #90-120
+        # d_right = self.last_scan[480:541] #240-270
+
+        # self.last_scan[start_degree*2:end_degree*2+1]
+
+        self.get_logger().debug(str(min(self.last_scan[0:61])) + " / "+ str(min(self.last_scan[660:])))
+        #detect front left or front right position of the obstacle -- 1 // cant work cuz the robot will move when avoiding
+        #record the movement and react accordingly -- 2
+        if min(self.last_scan[0:55]) < 0.36 or min(self.last_scan[666:]) < 0.36:
+            if min(self.last_scan[120:231]) > 0.5 and min(self.last_scan[490:600]) > 0.5:# sufficient space in both left and right
+                if self.last != 0.0:  # wouldn't make another decision if the robot is already not moving forward and not runnning into stuff
+                    self.move_2D(0.0,self.last,0.0)
+                else: # decide which way to go // random? // base on the approximate direction of the obstacle ahead?
+                    if min(self.last_scan[70:111]) > 0.35:
+                        self.move_2D(0.0,0.25,0.0)
+                        self.last = 0.25
+                    elif min(self.last_scan[610:651]) > 0.35:
+                        self.move_2D(0.0, -0.25, 0.0)
+                        self.last = -0.25
+                    else: 
+                        self.move_2D(0.0,-0.25,0.0)
+                        self.last = -0.25
+            elif min(self.last_scan[120:231]) < 0.35:
+                self.move_2D(0.0, -0.25, 0.0)
+                self.last = -0.25
+            elif min(self.last_scan[490:600]) < 0.35:
+                self.move_2D(0.0, 0.25, 0.0)
+                self.last = 0.25
+            # elif min(self.last_scan[130:231]) > min(self.last_scan[490:591]):
+            #     self.move_2D(0.0,0.25,0.0)
+            #     self.forw = False
+            # else:
+            #     self.get_logger().debug("no choice")
+            #     self.move_2D(0.0,0.-0.25,0.0)
+            #     self.forw = False
+
         else:
-            self.move_2D(0.4, 0.0, 0.0)
+            self.move_2D(0.3, 0.0, 0.0)
 
         ######################## MODIFY CODE HERE ########################
 
