@@ -62,25 +62,22 @@ class ObstacleAvoidanceNode(Node):
         #detect front left or front right position of the obstacle -- 1 // cant work cuz the robot will move when avoiding
         #record the movement and react accordingly -- 2
         if min(self.last_scan[0:55]) < 0.36 or min(self.last_scan[666:]) < 0.36:
-            if min(self.last_scan[120:231]) > 0.5 and min(self.last_scan[490:600]) > 0.5:# sufficient space in both left and right
-                if self.last != 0.0:  # wouldn't make another decision if the robot is already not moving forward and not runnning into stuff
-                    self.move_2D(0.0,self.last,0.0)
-                else: # decide which way to go // random? // base on the approximate direction of the obstacle ahead?
-                    if min(self.last_scan[70:111]) > 0.35:
-                        self.move_2D(0.0,0.25,0.0)
-                        self.last = 0.25
-                    elif min(self.last_scan[610:651]) > 0.35:
-                        self.move_2D(0.0, -0.25, 0.0)
-                        self.last = -0.25
-                    else: 
-                        self.move_2D(0.0,-0.25,0.0)
-                        self.last = -0.25
-            elif min(self.last_scan[120:231]) < 0.35:
+            if min(self.last_scan[120:231]) < 0.35:
                 self.move_2D(0.0, -0.25, 0.0)
                 self.last = -0.25
             elif min(self.last_scan[490:600]) < 0.35:
                 self.move_2D(0.0, 0.25, 0.0)
                 self.last = 0.25
+            else: # sufficient space in both left and right
+                if self.last != 0.0:  # wouldn't make another decision if the robot is already not moving forward and not runnning into stuff
+                    pass
+                else: # decide which way to go // random? // base on the approximate direction of the obstacle ahead?
+                    if min(self.last_scan[70:111]) > min(self.last_scan[610:651]):
+                        self.move_2D(0.0,0.25,0.0)
+                        self.last = 0.25
+                    else: 
+                        self.move_2D(0.0,-0.25,0.0)
+                        self.last = -0.25
             # elif min(self.last_scan[130:231]) > min(self.last_scan[490:591]):
             #     self.move_2D(0.0,0.25,0.0)
             #     self.forw = False
@@ -91,6 +88,7 @@ class ObstacleAvoidanceNode(Node):
 
         else:
             self.move_2D(0.3, 0.0, 0.0)
+            self.last = 0.0
 
         ######################## MODIFY CODE HERE ########################
 
