@@ -61,24 +61,26 @@ class ObstacleAvoidanceNode(Node):
         self.get_logger().debug(str(min(self.last_scan[0:61])) + " / "+ str(min(self.last_scan[660:])))
         #detect front left or front right position of the obstacle -- 1 // cant work cuz the robot will move when avoiding
         #record the movement and react accordingly -- 2
-        if min(self.last_scan[0:60]) < 0.37 or min(self.last_scan[660:]) < 0.37:
-            if min(self.last_scan[120:240]) < 0.35:
-                self.last = -0.25
-                self.move_2D(0.0, -0.25, 0.0)
-            elif min(self.last_scan[490:600]) < 0.35:
-                self.last = 0.25
-                self.move_2D(0.0, 0.25, 0.0)
+        if min(self.last_scan[0:60]) < 0.37 or min(self.last_scan[660:]) < 0.37: # if there is obstacle in front
+            if min(self.last_scan[120:240]) < 0.35: # if there is obstacle on the left
+                self.last = -0.25 # record
+                self.move_2D(0.0, -0.25, 0.0) # move right
+            elif min(self.last_scan[490:600]) < 0.35: # if there is obstacle on the right
+                self.last = 0.25 # record
+                self.move_2D(0.0, 0.25, 0.0) # move left
             else: # sufficient space in both left and right
                 if self.last != 0.0:  # wouldn't make another decision if the robot is already not moving forward and not runnning into stuff
-                    self.move_2D(0.0,self.last,0.0)
+                    self.move_2D(0.0,self.last,0.0) # not sure if it is necessary // depends on whether velocity is configured to approach zero if no command was receieved
                     pass
-                else: # decide which way to go // random? // base on the approximate direction of the obstacle ahead?
-                    if min(self.last_scan[70:111]) > min(self.last_scan[610:651]):
-                        self.last = 0.25
-                        self.move_2D(0.0,0.25,0.0)
+                else: # decide which way to go // random? // base on the approximate direction of the obstacle ahead? 
+                    if min(self.last_scan[70:111]) > min(self.last_scan[610:651]): # left and right distancce comparison (inf v inf) case included
+                        self.last = 0.25 # record
+                        self.move_2D(0.0,0.25,0.0) # move left if left has more space
                     else: 
-                        self.last = -0.25
-                        self.move_2D(0.0,-0.25,0.0)
+                        self.last = -0.25 # record
+                        self.move_2D(0.0,-0.25,0.0) # move right if right has more space
+            
+            
             # elif min(self.last_scan[130:231]) > min(self.last_scan[490:591]):
             #     self.move_2D(0.0,0.25,0.0)
             #     self.forw = False
@@ -87,9 +89,9 @@ class ObstacleAvoidanceNode(Node):
             #     self.move_2D(0.0,0.-0.25,0.0)
             #     self.forw = False
 
-        else:
-            self.last = 0.0
-            self.move_2D(0.3, 0.0, 0.0)
+        else: # if no obstacle ahead
+            self.last = 0.0 # record
+            self.move_2D(0.3, 0.0, 0.0) # move forward
 
         ######################## MODIFY CODE HERE ########################
 
