@@ -61,8 +61,45 @@ class WaypointNode(Node):
 
         self.goal_list = goal_list
         self.map_array = map_array
-
+        self.wp = []
+        self.counter = 0
         self.pose = None
+        self.last_x_diff = 0
+        self.last_y_diff = 0
+
+    def coordinates_to_index(self, coordinates, robot=False):
+        if  robot:
+            x = np.clip(round((coordinates[0] + 1.0) / 0.2), 0, 30)
+            y = np.clip(round((coordinates[1] + 5.0) / 0.2), 0, 35)
+        else:
+            x = round((coordinates[0] + 1.0) / 0.2)
+            y = round((coordinates[1] + 5.0) / 0.2)
+        return (x,y)
+
+    def index_to_coordinates(self, index):
+        # x = round(index[0] * 0.2 - 1.0, 2)
+        # y = round(index[1] * 0.2 - 5.0, 2)
+        x = index[0] * 0.2 - 1.0
+        y = index[1] * 0.2 - 5.0
+        return (x,y)
+    
+    def move_to_goal(self):
+        coord_location = self.index_to_coordinates(self.wp[0])
+        x_diff = self.pose[0] - coord_location[0] - 0.1 # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
+        y_diff = self.pose[1] - coord_location[1] - 0.1 # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
+        if abs(x_diff) < 0.05 and abs(y_diff) < 0.05:
+            self.last_x_diff = 0
+            self.last_y_diff = 0
+            self.wp.pop(0)
+            self.move_2D(0,0,0.0)
+        else:
+            self.last_x_diff+=x_diff # x integrate part
+            self.last_y_diff+=y_diff # y integrate part
+            total_x_diff = -x_diff - self.last_x_diff
+            total_y_diff = -y_diff - self.last_y_diff
+            self.move_2D(total_x_diff, total_y_diff, 0.0)
+            self.get_logger().debug(f'{total_x_diff}, {total_y_diff}')
+
 
     def yaw_from_quaternion(self, q):
         '''Returns yaw angle (in rad) for orientation based on given quaternion input q'''
@@ -109,7 +146,22 @@ class WaypointNode(Node):
         self.get_logger().debug(f"Pose: {self.pose}")
 
         ###### INSERT CODE HERE ######
-        self.move_2D(0.5)
+        if self.wp:
+            # self.counter+=1
+            self.move_to_goal()
+            return # tell the robot how to move based on self.path_to_goal
+        else:
+            while self.goal_list == []:
+                self.get_logger().debug('No more goal to reach')
+                return
+            self.grid = Grid(self.map_array, self.coordinates_to_index((self.pose[0],self.pose[1]),robot=True), self.coordinates_to_index(self.goal_list.pop(0)))
+            self.path_to_goal, self.cost, self.wp = self.grid.a_star()
+            self.grid.draw_grid_map(waypoints=self.wp, path=self.path_to_goal)
+            # print(self.path_to_goal, self.cost)
+        # if self.counter>60:
+        #     self.counter = 0
+        #     self.know_where_to_go=False
+        #     return
         ###### INSERT CODE HERE ######
 
 
@@ -205,6 +257,87 @@ class Grid():
         img = img.resize((base_width, hsize), Image.Resampling.NEAREST)
 
         img.show()
+    
+    def draw_heuristic_map(self):
+        h_map = np.zeros((len(self.grid),len(self.grid[0])))
+        max = 0 # init value with no reason
+        min = 100 # init value with no reason
+        for i in range(len(h_map)):
+            for j in range(len(h_map[i])):
+                h_map[i][j] = np.linalg.norm(np.array((i,j))-np.array(self.goal_position))
+                if h_map[i][j] > max:
+                    max = h_map[i][j]
+                if h_map[i][j] < min:
+                    min = h_map[i][j]
+        image_grid = np.ones((len(h_map),len(h_map[0]),3), dtype=np.uint8)
+        for i in range(len(image_grid)):
+            for j in range(len(image_grid[i])):
+                image_grid[i][j] = (0,0,(h_map[i][j]-min)/(max-min)*255) #normalizing
+        image_grid = np.flip(image_grid, axis=1)[::-1]
+        img = Image.fromarray(image_grid, 'RGB')
+
+        # Resize image
+        base_width = 500
+        wpercent = (base_width / float(img.size[0]))
+        hsize = int((float(img.size[1]) * float(wpercent)))
+        img = img.resize((base_width, hsize), Image.Resampling.NEAREST)
+
+        img.show()
+
+    def check_neighbors(self, current):
+        temp = []
+        x = [current[0]-1, current[0]+1]
+        y = [current[1]-1, current[1]+1]
+        for i in x:
+            if self.grid[i][current[1]] < 50 and i > 0 and i < 30:
+                temp.append((i,current[1]))
+        for j in y:
+            if self.grid[current[0]][j] < 50 and j > 0 and j < 35:
+                temp.append((current[0],j))
+        return temp
+
+        
+
+    def a_star(self):
+        # g = manhattan distance? A: Its just 1 regardless cuz we moving by block, all the edges are equal cost
+        # h = euclidean distance
+        if not self.check_grid_validity():
+            print("Cannot reach")
+            return [], 0
+        path = {self.starting_position:self.starting_position}
+        g = {}
+        g[self.starting_position] = 0
+        f = []
+        heapq.heapify(f)
+        heapq.heappush(f, (np.linalg.norm(np.array((self.starting_position))-np.array(self.goal_position)), self.starting_position))
+        while f:
+            current = heapq.heappop(f)[1]
+            if current == self.goal_position:
+                cost = g[current]
+                ans = []
+                while current != self.starting_position:
+                    ans.insert(0,current)
+                    current = path[current]
+                ans.insert(0,current)
+                waypoints = [self.starting_position]
+                for i in range(1, len(ans)-1):
+                    if abs(ans[i-1][0] - ans[i][0]) != abs(ans[i+1][0]-ans[i][0]) or abs(ans[i-1][1] - ans[i][1]) != abs(ans[i+1][1]-ans[i][1]):
+                        waypoints.append(ans[i])
+                waypoints.append(self.goal_position)
+                return ans, cost, waypoints
+            x = abs(path[current][0] - current[0])
+            y = abs(path[current][1] - current[1])
+            for i in self.check_neighbors(current):
+                if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
+                    diff = 1.3
+                else:
+                    diff = 1
+                if i not in g or g[i] > g[current] + diff:
+                    g[i] = g[current] + diff
+                    path[i] = current
+                    heapq.heappush(f, (g[i]+np.linalg.norm(np.array((i))-np.array(self.goal_position)), i))
+
+            
 
 
 def main(args=None):
