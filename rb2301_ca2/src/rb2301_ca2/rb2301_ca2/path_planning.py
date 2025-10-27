@@ -21,6 +21,7 @@ np.set_printoptions(
 set_logger_level("waypoint", level=LoggingSeverity.DEBUG) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 
 is_simulation = True # Remember to configure this to False if testing for the real lab setup
+turning = True
 if is_simulation:
     max_translate_velocity = 1.4
 else:
@@ -62,44 +63,95 @@ class WaypointNode(Node):
         self.goal_list = goal_list
         self.map_array = map_array
         self.wp = []
-        self.counter = 0
+        self.path_to_goal = []
         self.pose = None
         self.last_x_diff = 0
         self.last_y_diff = 0
+        self.first = True
+        self.last_diff = 0
+        self.turning = turning
 
-    def coordinates_to_index(self, coordinates, robot=False):
-        if  robot:
-            x = np.clip(round((coordinates[0] + 1.0) / 0.2), 0, 30)
-            y = np.clip(round((coordinates[1] + 5.0) / 0.2), 0, 35)
+    def coordinates_to_index(self, coordinates):
+        if self.is_simulation:
+            x = int((coordinates[0] + 1.0) / 0.2)
+            y = int((coordinates[1] + 5.0) / 0.2)
+            return (x,y)
         else:
-            x = round((coordinates[0] + 1.0) / 0.2)
-            y = round((coordinates[1] + 5.0) / 0.2)
-        return (x,y)
+            x = int((coordinates[0] - 0.1) / 0.2)
+            y = int((coordinates[1] + 1.9) / 0.2)
+            return (x,y)
 
     def index_to_coordinates(self, index):
-        # x = round(index[0] * 0.2 - 1.0, 2)
-        # y = round(index[1] * 0.2 - 5.0, 2)
-        x = index[0] * 0.2 - 1.0
-        y = index[1] * 0.2 - 5.0
-        return (x,y)
+        if self.is_simulation:
+            x = max(-0.35,index[0] * 0.2 - 1.0 + 0.1) # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
+            y = index[1] * 0.2 - 5.0 + 0.1 # cheated a lil bit
+            return (x,y)
+        else:
+            x = index[0] * 0.2 + 0.1 + 0.1
+            y = index[1] * 0.2 - 1.9 + 0.1
+            return (x,y)
     
     def move_to_goal(self):
         coord_location = self.index_to_coordinates(self.wp[0])
-        x_diff = self.pose[0] - coord_location[0] - 0.1 # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
-        y_diff = self.pose[1] - coord_location[1] - 0.1 # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
-        if abs(x_diff) < 0.05 and abs(y_diff) < 0.05:
-            self.last_x_diff = 0
-            self.last_y_diff = 0
-            self.wp.pop(0)
-            self.move_2D(0,0,0.0)
+        x_diff = coord_location[0] - self.pose[0] 
+        y_diff = coord_location[1] - self.pose[1]
+        if self.turning:
+            if self.first:
+                if abs(x_diff) > abs(y_diff):
+                    self.first = False
+                    self.temp = True
+                    if x_diff > 0:
+                        self.target_angle = 0
+                    else:
+                        self.target_angle = 180
+                else:
+                    self.first = False
+                    self.temp = False
+                    if y_diff > 0:
+                        self.target_angle = 90
+                    else:
+                        self.target_angle = -90
+            if self.temp:
+                self.diff = abs(x_diff + np.cos(self.target_angle)*0.08)
+            else: self.diff = abs(y_diff + np.sin(self.target_angle)*0.08)
+            angle_diff = self.pose[2] - self.target_angle
+            if angle_diff > 180:
+                    angle_diff -= 360
+            elif angle_diff < -180:
+                    angle_diff += 360
+            if abs(angle_diff) > 0.5:
+                if angle_diff > 0:
+                    self.move_2D(0,0,-2)
+                else: self.move_2D(0,0,2) 
+                self.get_logger().debug(f"Recalibrating heading > current heading: {self.pose[2]}, taget heading: {self.target_angle}, difference: {angle_diff}")
+            else:
+                if self.diff > 0.03:
+                    self.last_diff += (0.01 if abs(self.diff) < 0.4 else 0)
+                    total_diff = self.diff*1.3 + self.last_diff
+                    self.move_2D(total_diff,0,0)
+                else:
+                    self.first = True
+                    self.last_diff = 0
+                    self.wp.pop(0)
+                    self.move_2D(0,0,0)
+                self.get_logger().debug(f"Navigating from: {(self.pose[0], self.pose[1])} to {coord_location}, difference = {self.diff}")
         else:
-            self.last_x_diff+=x_diff # x integrate part
-            self.last_y_diff+=y_diff # y integrate part
-            total_x_diff = -x_diff - self.last_x_diff
-            total_y_diff = -y_diff - self.last_y_diff
+            if abs(x_diff) < 0.03:
+                self.last_x_diff = 0
+                total_x_diff = 0
+            else:
+                self.last_x_diff+= (x_diff/abs(x_diff)*0.01 if abs(x_diff) < 0.4 else 0)# x integrate part
+                total_x_diff = x_diff*1.2 + self.last_x_diff
+            if abs(y_diff) < 0.03:
+                self.last_y_diff = 0
+                total_y_diff = 0
+            else:
+                self.last_y_diff+= (y_diff/abs(y_diff)*0.01 if abs(y_diff) < 0.4 else 0)# y integrate part
+                total_y_diff = y_diff*1.2 + self.last_y_diff
+            if total_x_diff == total_y_diff == 0:
+                self.wp.pop(0)
             self.move_2D(total_x_diff, total_y_diff, 0.0)
-            self.get_logger().debug(f'{total_x_diff}, {total_y_diff}')
-
+            self.get_logger().debug(f"Navigating from: {(self.pose[0], self.pose[1])} to {coord_location}, x_difference: {x_diff}, y_difference: {y_diff}")
 
     def yaw_from_quaternion(self, q):
         '''Returns yaw angle (in rad) for orientation based on given quaternion input q'''
@@ -143,25 +195,19 @@ class WaypointNode(Node):
         """Controller loop. Insert path planning and PID control logic here"""
         if self.pose is None:
             return # Does not run if no pose received from Odom or Optitrack
-        self.get_logger().debug(f"Pose: {self.pose}")
+        # self.get_logger().debug(f"Pose: {self.pose}")
 
         ###### INSERT CODE HERE ######
         if self.wp:
-            # self.counter+=1
             self.move_to_goal()
-            return # tell the robot how to move based on self.path_to_goal
+            return
         else:
             while self.goal_list == []:
                 self.get_logger().debug('No more goal to reach')
                 return
-            self.grid = Grid(self.map_array, self.coordinates_to_index((self.pose[0],self.pose[1]),robot=True), self.coordinates_to_index(self.goal_list.pop(0)))
+            self.grid = Grid(self.map_array, self.coordinates_to_index((self.pose[0],self.pose[1])), self.coordinates_to_index(self.goal_list.pop(0)))
             self.path_to_goal, self.cost, self.wp = self.grid.a_star()
-            self.grid.draw_grid_map(waypoints=self.wp, path=self.path_to_goal)
-            # print(self.path_to_goal, self.cost)
-        # if self.counter>60:
-        #     self.counter = 0
-        #     self.know_where_to_go=False
-        #     return
+            self.grid.draw_grid_map(waypoints=self.wp+[self.coordinates_to_index((self.pose[0],self.pose[1]))], path=self.path_to_goal)
         ###### INSERT CODE HERE ######
 
 
@@ -275,13 +321,11 @@ class Grid():
                 image_grid[i][j] = (0,0,(h_map[i][j]-min)/(max-min)*255) #normalizing
         image_grid = np.flip(image_grid, axis=1)[::-1]
         img = Image.fromarray(image_grid, 'RGB')
-
         # Resize image
         base_width = 500
         wpercent = (base_width / float(img.size[0]))
         hsize = int((float(img.size[1]) * float(wpercent)))
         img = img.resize((base_width, hsize), Image.Resampling.NEAREST)
-
         img.show()
 
     def check_neighbors(self, current):
@@ -289,21 +333,17 @@ class Grid():
         x = [current[0]-1, current[0]+1]
         y = [current[1]-1, current[1]+1]
         for i in x:
-            if self.grid[i][current[1]] < 50 and i > 0 and i < 30:
+            if self.grid[i][current[1]] < 50 and 0 < i < 30:
                 temp.append((i,current[1]))
         for j in y:
-            if self.grid[current[0]][j] < 50 and j > 0 and j < 35:
+            if self.grid[current[0]][j] < 50 and 0 < j < 35:
                 temp.append((current[0],j))
         return temp
 
-        
-
     def a_star(self):
-        # g = manhattan distance? A: Its just 1 regardless cuz we moving by block, all the edges are equal cost
-        # h = euclidean distance
         if not self.check_grid_validity():
             print("Cannot reach")
-            return [], 0
+            return [], 0, [self.goal_position]
         path = {self.starting_position:self.starting_position}
         g = {}
         g[self.starting_position] = 0
@@ -319,7 +359,7 @@ class Grid():
                     ans.insert(0,current)
                     current = path[current]
                 ans.insert(0,current)
-                waypoints = [self.starting_position]
+                waypoints = []
                 for i in range(1, len(ans)-1):
                     if abs(ans[i-1][0] - ans[i][0]) != abs(ans[i+1][0]-ans[i][0]) or abs(ans[i-1][1] - ans[i][1]) != abs(ans[i+1][1]-ans[i][1]):
                         waypoints.append(ans[i])
@@ -336,9 +376,6 @@ class Grid():
                     g[i] = g[current] + diff
                     path[i] = current
                     heapq.heappush(f, (g[i]+np.linalg.norm(np.array((i))-np.array(self.goal_position)), i))
-
-            
-
 
 def main(args=None):
     global is_simulation
