@@ -21,7 +21,7 @@ np.set_printoptions(
 set_logger_level("waypoint", level=LoggingSeverity.DEBUG) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 
 is_simulation = True # Remember to configure this to False if testing for the real lab setup
-turning = True
+turning = False
 if is_simulation:
     max_translate_velocity = 1.4
 else:
@@ -69,7 +69,6 @@ class WaypointNode(Node):
         self.last_y_diff = 0
         self.first = True
         self.last_diff = 0
-        self.turning = turning
 
     def coordinates_to_index(self, coordinates):
         if self.is_simulation:
@@ -95,7 +94,7 @@ class WaypointNode(Node):
         coord_location = self.index_to_coordinates(self.wp[0])
         x_diff = coord_location[0] - self.pose[0] 
         y_diff = coord_location[1] - self.pose[1]
-        if self.turning:
+        if turning:
             if self.first:
                 if abs(x_diff) > abs(y_diff):
                     self.first = False
@@ -195,9 +194,11 @@ class WaypointNode(Node):
         """Controller loop. Insert path planning and PID control logic here"""
         if self.pose is None:
             return # Does not run if no pose received from Odom or Optitrack
-        # self.get_logger().debug(f"Pose: {self.pose}")
 
         ###### INSERT CODE HERE ######
+
+        # TO DO: PID for rotation 
+
         if self.wp:
             self.move_to_goal()
             return
@@ -329,16 +330,42 @@ class Grid():
         img.show()
 
     def check_neighbors(self, current):
-        temp = []
-        x = [current[0]-1, current[0]+1]
-        y = [current[1]-1, current[1]+1]
-        for i in x:
-            if self.grid[i][current[1]] < 50 and 0 < i < 30:
-                temp.append((i,current[1]))
-        for j in y:
-            if self.grid[current[0]][j] < 50 and 0 < j < 35:
-                temp.append((current[0],j))
-        return temp
+        """Return free neighboring cells (4-connectivity plus diagonals).
+
+        Diagonal neighbors are only allowed when both adjacent orthogonal
+        neighbors are free (this prevents cutting corners through obstacles)
+        and the diagonal cell itself is free. The function also guards against
+        out-of-bounds indexing and avoids duplicate entries.
+        """
+        obstacle_threshold = 50
+        neighbors = []
+        x0, y0 = current[0], current[1]
+
+        def in_bounds(x, y):
+            return 0 <= x < self.shape[0] and 0 <= y < self.shape[1]
+
+        # orthogonal neighbors (up, down, left, right)
+        orths = [(x0 - 1, y0), (x0 + 1, y0), (x0, y0 - 1), (x0, y0 + 1)]
+        for nx, ny in orths:
+            if in_bounds(nx, ny) and self.grid[nx][ny] < obstacle_threshold:
+                neighbors.append((nx, ny))
+
+        # only consider diagonals if not in turning mode
+        if not turning:
+            # diagonal offsets: (dx, dy)
+            diag_offsets = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+            for dx, dy in diag_offsets:
+                orth1 = (x0 + dx, y0)    # horizontal adjacent
+                orth2 = (x0, y0 + dy)    # vertical adjacent
+                diag = (x0 + dx, y0 + dy) # diagonal cell
+
+                # Check orthogonals are in neighbors (i.e. free) and diagonal itself free
+                if orth1 in neighbors and orth2 in neighbors:
+                    if in_bounds(diag[0], diag[1]) and self.grid[diag[0]][diag[1]] < obstacle_threshold:
+                        if diag not in neighbors:
+                            neighbors.append(diag)
+
+        return neighbors
 
     def a_star(self):
         if not self.check_grid_validity():
@@ -368,7 +395,12 @@ class Grid():
             x = abs(path[current][0] - current[0])
             y = abs(path[current][1] - current[1])
             for i in self.check_neighbors(current):
-                if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
+                if abs(i[0] - current[0]) == abs(i[1] - current[1]):
+                    if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
+                        diff = 1.6
+                    else:
+                        diff = 1.4
+                elif abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
                     diff = 1.3
                 else:
                     diff = 1
