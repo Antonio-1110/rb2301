@@ -67,23 +67,24 @@ class WaypointNode(Node):
         self.pose = None
         self.last_x_diff = 0
         self.last_y_diff = 0
+        self.last_angle_diff = 0
         self.first = True
         self.last_diff = 0
 
     def coordinates_to_index(self, coordinates):
         if self.is_simulation:
-            x = int((coordinates[0] + 1.0) / 0.2)
-            y = int((coordinates[1] + 5.0) / 0.2)
-            return (x,y)
+            x = round((coordinates[0] + 1.0) / 0.2)
+            y = round((coordinates[1] + 5.0) / 0.2)
+            return (int(x),int(y))
         else:
-            x = int((coordinates[0] - 0.1) / 0.2)
-            y = int((coordinates[1] + 1.9) / 0.2)
-            return (x,y)
+            x = round((coordinates[0] - 0.1) / 0.2,0)
+            y = round((coordinates[1] + 1.9) / 0.2,0)
+            return (int(x),int(y))
 
     def index_to_coordinates(self, index):
         if self.is_simulation:
-            x = max(-0.35,index[0] * 0.2 - 1.0 + 0.1) # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
-            y = index[1] * 0.2 - 5.0 + 0.1 # cheated a lil bit
+            x = index[0] * 0.2 - 1.0 + 0.1 # 0.1 offset to make the coordinates in the center of the 0.2*0.2 block
+            y = index[1] * 0.2 - 5.0 + 0.1
             return (x,y)
         else:
             x = index[0] * 0.2 + 0.1 + 0.1
@@ -119,9 +120,14 @@ class WaypointNode(Node):
             elif angle_diff < -180:
                     angle_diff += 360
             if abs(angle_diff) > 0.5:
+                self.last_angle_diff += 0.09 if abs(angle_diff) < 10 else 0
                 if angle_diff > 0:
-                    self.move_2D(0,0,-2)
-                else: self.move_2D(0,0,2) 
+                    total_diff = -angle_diff*0.2 - self.last_angle_diff
+                    self.move_2D(0,0,total_diff)
+                else:
+                    total_diff = -angle_diff*0.2 + self.last_angle_diff
+                    self.move_2D(0,0,total_diff) 
+                    print(total_diff)
                 self.get_logger().debug(f"Recalibrating heading > current heading: {self.pose[2]}, taget heading: {self.target_angle}, difference: {angle_diff}")
             else:
                 if self.diff > 0.03:
@@ -129,6 +135,7 @@ class WaypointNode(Node):
                     total_diff = self.diff*1.3 + self.last_diff
                     self.move_2D(total_diff,0,0)
                 else:
+                    self.last_angle_diff = 0
                     self.first = True
                     self.last_diff = 0
                     self.wp.pop(0)
@@ -342,7 +349,7 @@ class Grid():
         x0, y0 = current[0], current[1]
 
         def in_bounds(x, y):
-            return 0 <= x < self.shape[0] and 0 <= y < self.shape[1]
+            return 0 <= x < 35 and 0 <= y < 30
 
         # orthogonal neighbors (up, down, left, right)
         orths = [(x0 - 1, y0), (x0 + 1, y0), (x0, y0 - 1), (x0, y0 + 1)]
@@ -351,7 +358,7 @@ class Grid():
                 neighbors.append((nx, ny))
 
         # only consider diagonals if not in turning mode
-        if not turning:
+        if  not turning:
             # diagonal offsets: (dx, dy)
             diag_offsets = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
             for dx, dy in diag_offsets:
@@ -364,7 +371,6 @@ class Grid():
                     if in_bounds(diag[0], diag[1]) and self.grid[diag[0]][diag[1]] < obstacle_threshold:
                         if diag not in neighbors:
                             neighbors.append(diag)
-
         return neighbors
 
     def a_star(self):
@@ -397,9 +403,9 @@ class Grid():
             for i in self.check_neighbors(current):
                 if abs(i[0] - current[0]) == abs(i[1] - current[1]):
                     if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
-                        diff = 1.6
-                    else:
                         diff = 1.4
+                    else:
+                        diff = 1.1
                 elif abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
                     diff = 1.3
                 else:
@@ -408,7 +414,7 @@ class Grid():
                     g[i] = g[current] + diff
                     path[i] = current
                     heapq.heappush(f, (g[i]+np.linalg.norm(np.array((i))-np.array(self.goal_position)), i))
-
+        
 def main(args=None):
     global is_simulation
     print("Starting path planning")
