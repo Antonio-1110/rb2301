@@ -20,8 +20,8 @@ np.set_printoptions(
 
 set_logger_level("waypoint", level=LoggingSeverity.DEBUG) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 
-is_simulation = True # Remember to configure this to False if testing for the real lab setup
-turning = False
+is_simulation = False # Remember to configure this to False if testing for the real lab setup
+turning = True
 if is_simulation:
     max_translate_velocity = 1.4
 else:
@@ -77,8 +77,8 @@ class WaypointNode(Node):
             y = round((coordinates[1] + 5.0) / 0.2)
             return (int(x),int(y))
         else:
-            x = round((coordinates[0] - 0.1) / 0.2,0)
-            y = round((coordinates[1] + 1.9) / 0.2,0)
+            x = np.clip(round((coordinates[0] - 0.1) / 0.2),1,14)
+            y = np.clip(round((coordinates[1] + 1.9) / 0.2),1,9)
             return (int(x),int(y))
 
     def index_to_coordinates(self, index):
@@ -87,8 +87,8 @@ class WaypointNode(Node):
             y = index[1] * 0.2 - 5.0 + 0.1
             return (x,y)
         else:
-            x = index[0] * 0.2 + 0.1 + 0.1
-            y = index[1] * 0.2 - 1.9 + 0.1
+            x = index[0] * 0.2 + 0.1 + 0.05
+            y = index[1] * 0.2 - 1.9 + 0.05
             return (x,y)
     
     def move_to_goal(self):
@@ -112,20 +112,20 @@ class WaypointNode(Node):
                     else:
                         self.target_angle = -90
             if self.temp:
-                self.diff = abs(x_diff + np.cos(self.target_angle)*0.08)
-            else: self.diff = abs(y_diff + np.sin(self.target_angle)*0.08)
+                self.diff = abs(x_diff)# + np.cos(self.target_angle)*0.08)
+            else: self.diff = abs(y_diff)# + np.sin(self.target_angle)*0.08)
             angle_diff = self.pose[2] - self.target_angle
             if angle_diff > 180:
                     angle_diff -= 360
             elif angle_diff < -180:
                     angle_diff += 360
-            if abs(angle_diff) > 0.5:
-                self.last_angle_diff += 0.09 if abs(angle_diff) < 10 else 0
+            if abs(angle_diff) > 5:
+                self.last_angle_diff += 0.02 if abs(angle_diff) < 3 else 0
                 if angle_diff > 0:
-                    total_diff = -angle_diff*0.2 - self.last_angle_diff
+                    total_diff = -angle_diff*0.1 - self.last_angle_diff
                     self.move_2D(0,0,total_diff)
                 else:
-                    total_diff = -angle_diff*0.2 + self.last_angle_diff
+                    total_diff = -angle_diff*0.1 + self.last_angle_diff
                     self.move_2D(0,0,total_diff) 
                     print(total_diff)
                 self.get_logger().debug(f"Recalibrating heading > current heading: {self.pose[2]}, taget heading: {self.target_angle}, difference: {angle_diff}")
@@ -146,14 +146,14 @@ class WaypointNode(Node):
                 self.last_x_diff = 0
                 total_x_diff = 0
             else:
-                self.last_x_diff+= (x_diff/abs(x_diff)*0.01 if abs(x_diff) < 0.4 else 0)# x integrate part
-                total_x_diff = x_diff*1.2 + self.last_x_diff
+                self.last_x_diff+= (x_diff/abs(x_diff)*0.01 if abs(x_diff) < 0.3 else 0)# x integrate part
+                total_x_diff = x_diff + self.last_x_diff
             if abs(y_diff) < 0.03:
                 self.last_y_diff = 0
                 total_y_diff = 0
             else:
-                self.last_y_diff+= (y_diff/abs(y_diff)*0.01 if abs(y_diff) < 0.4 else 0)# y integrate part
-                total_y_diff = y_diff*1.2 + self.last_y_diff
+                self.last_y_diff+= (y_diff/abs(y_diff)*0.01 if abs(y_diff) < 0.3 else 0)# y integrate part
+                total_y_diff = y_diff + self.last_y_diff
             if total_x_diff == total_y_diff == 0:
                 self.wp.pop(0)
             self.move_2D(total_x_diff, total_y_diff, 0.0)
@@ -358,24 +358,27 @@ class Grid():
                 neighbors.append((nx, ny))
 
         # only consider diagonals if not in turning mode
-        if  not turning:
-            # diagonal offsets: (dx, dy)
-            diag_offsets = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
-            for dx, dy in diag_offsets:
-                orth1 = (x0 + dx, y0)    # horizontal adjacent
-                orth2 = (x0, y0 + dy)    # vertical adjacent
-                diag = (x0 + dx, y0 + dy) # diagonal cell
+        # if  not turning:
+        #     # diagonal offsets: (dx, dy)
+        #     diag_offsets = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+        #     for dx, dy in diag_offsets:
+        #         orth1 = (x0 + dx, y0)    # horizontal adjacent
+        #         orth2 = (x0, y0 + dy)    # vertical adjacent
+        #         diag = (x0 + dx, y0 + dy) # diagonal cell
 
-                # Check orthogonals are in neighbors (i.e. free) and diagonal itself free
-                if orth1 in neighbors and orth2 in neighbors:
-                    if in_bounds(diag[0], diag[1]) and self.grid[diag[0]][diag[1]] < obstacle_threshold:
-                        if diag not in neighbors:
-                            neighbors.append(diag)
+        #         # Check orthogonals are in neighbors (i.e. free) and diagonal itself free
+        #         if orth1 in neighbors and orth2 in neighbors:
+        #             if in_bounds(diag[0], diag[1]) and self.grid[diag[0]][diag[1]] < obstacle_threshold:
+        #                 if diag not in neighbors:
+        #                     neighbors.append(diag)
         return neighbors
 
     def a_star(self):
         if not self.check_grid_validity():
             print("Cannot reach")
+            print(self.starting_position)
+            print(self.goal_position)
+            print(self.grid)
             return [], 0, [self.goal_position]
         path = {self.starting_position:self.starting_position}
         g = {}
