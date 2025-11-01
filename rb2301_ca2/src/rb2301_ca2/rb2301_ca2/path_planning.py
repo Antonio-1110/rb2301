@@ -20,8 +20,8 @@ np.set_printoptions(
 
 set_logger_level("waypoint", level=LoggingSeverity.DEBUG) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 
-is_simulation = False # Remember to configure this to False if testing for the real lab setup
-turning = True
+is_simulation = True # Remember to configure this to False if testing for the real lab setup
+turning = False
 if is_simulation:
     max_translate_velocity = 1.4
 else:
@@ -52,7 +52,7 @@ class WaypointNode(Node):
 
             self.map_sub = self.create_subscription( 
                 PoseStamped,
-                '/vrpn_mocap/bingda_003/pose',
+                '/vrpn_mocap/bingda_007/pose',
                 self.optitrack_callback, 
                 qos_profile
                 )
@@ -65,20 +65,21 @@ class WaypointNode(Node):
         self.wp = []
         self.path_to_goal = []
         self.pose = None
+        #below are variables used for integration in PID control
         self.last_x_diff = 0
         self.last_y_diff = 0
         self.last_angle_diff = 0
-        self.first = True
         self.last_diff = 0
+        self.first = True #whether the callback is the first time the robot going to the waypoint
 
-    def coordinates_to_index(self, coordinates):
+    def coordinates_to_index(self, coordinates): # converts coordinates into index in grid map
         if self.is_simulation:
             x = round((coordinates[0] + 1.0) / 0.2)
             y = round((coordinates[1] + 5.0) / 0.2)
             return (int(x),int(y))
         else:
-            x = np.clip(round((coordinates[0] - 0.1) / 0.2),1,14)
-            y = np.clip(round((coordinates[1] + 1.9) / 0.2),1,9)
+            x = np.clip(round((coordinates[0] - 0.1) / 0.2),1,14) # utilized clip to prevent recognizing the robot in an obstacle block
+            y = np.clip(round((coordinates[1] + 1.9) / 0.2),1,9) # drawbacks are mentioned in the report
             return (int(x),int(y))
 
     def index_to_coordinates(self, index):
@@ -87,76 +88,88 @@ class WaypointNode(Node):
             y = index[1] * 0.2 - 5.0 + 0.1
             return (x,y)
         else:
-            x = index[0] * 0.2 + 0.1 + 0.05
-            y = index[1] * 0.2 - 1.9 + 0.05
+            x = index[0] * 0.2 + 0.1 # no need for additional offset in real life setting
+            y = index[1] * 0.2 - 1.9
             return (x,y)
     
-    def move_to_goal(self):
-        coord_location = self.index_to_coordinates(self.wp[0])
-        x_diff = coord_location[0] - self.pose[0] 
+    def move_to_goal(self): # function that drives the robot towards the waypoints
+        coord_location = self.index_to_coordinates(self.wp[0]) # converts the index of the first item in waypoint list to coordinates
+        x_diff = coord_location[0] - self.pose[0] # separate the difference in x and y axis
         y_diff = coord_location[1] - self.pose[1]
         if turning:
-            if self.first:
-                if abs(x_diff) > abs(y_diff):
+            if self.first: # first time callback of a new waypoint
+                if abs(x_diff) > abs(y_diff): # since no diagonal path, only need to move in either x or y axis
                     self.first = False
                     self.temp = True
                     if x_diff > 0:
-                        self.target_angle = 0
+                        self.target_angle = 0 # waypoint's x is greater than pose's x so go forward
                     else:
-                        self.target_angle = 180
+                        self.target_angle = 180 # waypoint's x is smaller than pose's x so go backward
                 else:
                     self.first = False
                     self.temp = False
                     if y_diff > 0:
-                        self.target_angle = 90
+                        self.target_angle = 90 # waypoint's y is greater than pose's y so go left
                     else:
-                        self.target_angle = -90
-            if self.temp:
-                self.diff = abs(x_diff)# + np.cos(self.target_angle)*0.08)
-            else: self.diff = abs(y_diff)# + np.sin(self.target_angle)*0.08)
+                        self.target_angle = -90 # waypoint's y is greater than pose's y so go right
+            if self.temp: # since the robot will be heading the right direction, it will always move forward so we take the absolute value of the difference in either x or y axis
+                self.diff = abs(x_diff)
+            else: self.diff = abs(y_diff)
             angle_diff = self.pose[2] - self.target_angle
+            if angle_diff > 180: # figure out the shortest way to reach the target angle
+                    angle_diff -= 360
+            elif angle_diff < -180:
+                    angle_diff += 360
+            if abs(angle_diff) > 5: # if heading deviates more than 5 degress than adjust the heading
+                self.last_angle_diff += 0.02 if abs(angle_diff) < 10 else 0 # I part of PID
+                if angle_diff > 0:
+                    total_diff = -angle_diff - self.last_angle_diff # PI of PID where coefficients are both 1
+                    self.move_2D(0,0,total_diff)
+                else:
+                    total_diff = -angle_diff + self.last_angle_diff
+                    self.move_2D(0,0,total_diff) 
+                self.get_logger().debug(f"Recalibrating heading > current heading: {self.pose[2]}, taget heading: {self.target_angle}, difference: {angle_diff}")
+            else: # if heading is correct
+                if self.diff > 0.03: # if difference in coordinates is greater than 0.03
+                    self.last_diff += (0.01 if abs(self.diff) < 0.4 else 0) # I part of PID
+                    total_diff = self.diff*1.3 + self.last_diff # PI of PID where coefficients are 1.3 and 1
+                    self.move_2D(total_diff,0,0)
+                else: # if reached the waypoints
+                    self.last_angle_diff = 0 # reset integration part
+                    self.first = True # reset first time to waypoint
+                    self.last_diff = 0 # reset integration part
+                    self.wp.pop(0) # pop the rached waypoints from the waypoint list
+                    self.move_2D(0,0,0) # stop the robot though might not be neccessary
+                self.get_logger().debug(f"Navigating from: {(self.pose[0], self.pose[1])} to {coord_location}, difference = {self.diff}")
+        else: # not turning
+            angle_diff = self.pose[2] # added so the robot can still be facing angle 0 despite shifting in y axis
             if angle_diff > 180:
                     angle_diff -= 360
             elif angle_diff < -180:
                     angle_diff += 360
-            if abs(angle_diff) > 5:
+            if abs(angle_diff) > 3: # tighter threshold than turning 
                 self.last_angle_diff += 0.02 if abs(angle_diff) < 3 else 0
                 if angle_diff > 0:
                     total_diff = -angle_diff*0.1 - self.last_angle_diff
-                    self.move_2D(0,0,total_diff)
                 else:
                     total_diff = -angle_diff*0.1 + self.last_angle_diff
-                    self.move_2D(0,0,total_diff) 
-                    print(total_diff)
-                self.get_logger().debug(f"Recalibrating heading > current heading: {self.pose[2]}, taget heading: {self.target_angle}, difference: {angle_diff}")
-            else:
-                if self.diff > 0.03:
-                    self.last_diff += (0.01 if abs(self.diff) < 0.4 else 0)
-                    total_diff = self.diff*1.3 + self.last_diff
-                    self.move_2D(total_diff,0,0)
-                else:
-                    self.last_angle_diff = 0
-                    self.first = True
-                    self.last_diff = 0
-                    self.wp.pop(0)
-                    self.move_2D(0,0,0)
-                self.get_logger().debug(f"Navigating from: {(self.pose[0], self.pose[1])} to {coord_location}, difference = {self.diff}")
-        else:
+            else: total_diff = 0
             if abs(x_diff) < 0.03:
                 self.last_x_diff = 0
                 total_x_diff = 0
             else:
-                self.last_x_diff+= (x_diff/abs(x_diff)*0.01 if abs(x_diff) < 0.3 else 0)# x integrate part
-                total_x_diff = x_diff + self.last_x_diff
+                self.last_x_diff+= (x_diff/abs(x_diff)*0.02 if abs(x_diff) < 0.25 else 0)# x integrate part, absolute value part to make sure it has the same sign as x_diff
+                total_x_diff = x_diff*1.2 + self.last_x_diff
             if abs(y_diff) < 0.03:
                 self.last_y_diff = 0
                 total_y_diff = 0
             else:
-                self.last_y_diff+= (y_diff/abs(y_diff)*0.01 if abs(y_diff) < 0.3 else 0)# y integrate part
-                total_y_diff = y_diff + self.last_y_diff
+                self.last_y_diff+= (y_diff/abs(y_diff)*0.02 if abs(y_diff) < 0.25 else 0)# y integrate part
+                total_y_diff = y_diff*1.2 + self.last_y_diff
             if total_x_diff == total_y_diff == 0:
+                self.last_angle_diff = 0
                 self.wp.pop(0)
-            self.move_2D(total_x_diff, total_y_diff, 0.0)
+            self.move_2D(total_x_diff, total_y_diff, total_diff) # since the deviation from 0 is expected to be corrected when the deviation is small, it can be corrected while the robot continues it's movement in x and y axis
             self.get_logger().debug(f"Navigating from: {(self.pose[0], self.pose[1])} to {coord_location}, x_difference: {x_diff}, y_difference: {y_diff}")
 
     def yaw_from_quaternion(self, q):
@@ -203,19 +216,17 @@ class WaypointNode(Node):
             return # Does not run if no pose received from Odom or Optitrack
 
         ###### INSERT CODE HERE ######
-
-        # TO DO: PID for rotation 
-
-        if self.wp:
+        if self.wp: # if waypoint list is not empty than call move_to_goal function to follow the waypoints
             self.move_to_goal()
             return
         else:
-            while self.goal_list == []:
+            while self.goal_list == []: # if goal_list is empty
                 self.get_logger().debug('No more goal to reach')
                 return
+            # if goal_list is not empty, it would create a grid instance with the robot's pose and the first item of goal list.
             self.grid = Grid(self.map_array, self.coordinates_to_index((self.pose[0],self.pose[1])), self.coordinates_to_index(self.goal_list.pop(0)))
-            self.path_to_goal, self.cost, self.wp = self.grid.a_star()
-            self.grid.draw_grid_map(waypoints=self.wp+[self.coordinates_to_index((self.pose[0],self.pose[1]))], path=self.path_to_goal)
+            self.path_to_goal, self.cost, self.wp = self.grid.a_star() # execute a_star
+            self.grid.draw_grid_map(waypoints=self.wp+[self.coordinates_to_index((self.pose[0],self.pose[1]))], path=self.path_to_goal) # since I removed the robot's starting position in the waypoint list it is added back here for better visualization
         ###### INSERT CODE HERE ######
 
 
@@ -336,7 +347,7 @@ class Grid():
         img = img.resize((base_width, hsize), Image.Resampling.NEAREST)
         img.show()
 
-    def check_neighbors(self, current):
+    def check_neighbors(self, current): # kindly refined by GPT-5.0 mini
         """Return free neighboring cells (4-connectivity plus diagonals).
 
         Diagonal neighbors are only allowed when both adjacent orthogonal
@@ -358,27 +369,24 @@ class Grid():
                 neighbors.append((nx, ny))
 
         # only consider diagonals if not in turning mode
-        # if  not turning:
-        #     # diagonal offsets: (dx, dy)
-        #     diag_offsets = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
-        #     for dx, dy in diag_offsets:
-        #         orth1 = (x0 + dx, y0)    # horizontal adjacent
-        #         orth2 = (x0, y0 + dy)    # vertical adjacent
-        #         diag = (x0 + dx, y0 + dy) # diagonal cell
+        if  not turning:
+            # diagonal offsets: (dx, dy)
+            diag_offsets = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+            for dx, dy in diag_offsets:
+                orth1 = (x0 + dx, y0)    # horizontal adjacent
+                orth2 = (x0, y0 + dy)    # vertical adjacent
+                diag = (x0 + dx, y0 + dy) # diagonal cell
 
-        #         # Check orthogonals are in neighbors (i.e. free) and diagonal itself free
-        #         if orth1 in neighbors and orth2 in neighbors:
-        #             if in_bounds(diag[0], diag[1]) and self.grid[diag[0]][diag[1]] < obstacle_threshold:
-        #                 if diag not in neighbors:
-        #                     neighbors.append(diag)
+                # Check orthogonals are in neighbors (i.e. free) and diagonal itself free
+                if orth1 in neighbors and orth2 in neighbors:
+                    if in_bounds(diag[0], diag[1]) and self.grid[diag[0]][diag[1]] < obstacle_threshold:
+                        if diag not in neighbors:
+                            neighbors.append(diag)
         return neighbors
 
     def a_star(self):
         if not self.check_grid_validity():
             print("Cannot reach")
-            print(self.starting_position)
-            print(self.goal_position)
-            print(self.grid)
             return [], 0, [self.goal_position]
         path = {self.starting_position:self.starting_position}
         g = {}
@@ -386,37 +394,37 @@ class Grid():
         f = []
         heapq.heapify(f)
         heapq.heappush(f, (np.linalg.norm(np.array((self.starting_position))-np.array(self.goal_position)), self.starting_position))
-        while f:
-            current = heapq.heappop(f)[1]
-            if current == self.goal_position:
+        while f: # while frontier is not empty
+            current = heapq.heappop(f)[1] # the tuple pushed in is (g+h, (index))
+            if current == self.goal_position: # if goal is explored
                 cost = g[current]
                 ans = []
-                while current != self.starting_position:
+                while current != self.starting_position: # back track the shortest path to each node all the way to tge starting position
                     ans.insert(0,current)
                     current = path[current]
                 ans.insert(0,current)
                 waypoints = []
                 for i in range(1, len(ans)-1):
                     if abs(ans[i-1][0] - ans[i][0]) != abs(ans[i+1][0]-ans[i][0]) or abs(ans[i-1][1] - ans[i][1]) != abs(ans[i+1][1]-ans[i][1]):
-                        waypoints.append(ans[i])
+                        waypoints.append(ans[i]) # through out the path list, append that tuple to waypoint's list if it changes direction
                 waypoints.append(self.goal_position)
                 return ans, cost, waypoints
-            x = abs(path[current][0] - current[0])
-            y = abs(path[current][1] - current[1])
-            for i in self.check_neighbors(current):
-                if abs(i[0] - current[0]) == abs(i[1] - current[1]):
-                    if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
+            x = abs(path[current][0] - current[0]) # diff in x between the shortest path to current node and the current node, binary
+            y = abs(path[current][1] - current[1]) # diff in y between the shortest path to current node and the current node, binary
+            for i in self.check_neighbors(current): # it returns all the  avalible neighbors
+                if abs(i[0] - current[0]) == abs(i[1] - current[1]): # if diaganol path
+                    if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y: # penalize more if change direction
                         diff = 1.4
                     else:
-                        diff = 1.1
-                elif abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y:
+                        diff = 1.2
+                elif abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y: # if adjacent movement, penalize more if change direction
                     diff = 1.3
                 else:
                     diff = 1
-                if i not in g or g[i] > g[current] + diff:
+                if i not in g or g[i] > g[current] + diff: # if the node is not in g_dictionary or a shorter path is discovered then add it into g and update path
                     g[i] = g[current] + diff
                     path[i] = current
-                    heapq.heappush(f, (g[i]+np.linalg.norm(np.array((i))-np.array(self.goal_position)), i))
+                    heapq.heappush(f, (g[i]+np.linalg.norm(np.array((i))-np.array(self.goal_position)), i)) # push it in f with the adjusted g
         
 def main(args=None):
     global is_simulation
