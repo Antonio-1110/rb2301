@@ -169,7 +169,7 @@ class WaypointNode(Node):
             if total_x_diff == total_y_diff == 0:
                 self.last_angle_diff = 0
                 self.wp.pop(0)
-            self.move_2D(total_x_diff, total_y_diff, total_diff) # since the deviation from 0 is expected to be corrected when the deviation is small, it can be corrected while the robot continues it's movement in x and y axis
+            self.move_2D(total_x_diff, total_y_diff, total_diff) # since the deviation from 0 is expected to be corrected when the deviation is small, it can be corrected while the robot continues its movement in x and y axis
             self.get_logger().debug(f"Navigating from: {(self.pose[0], self.pose[1])} to {coord_location}, x_difference: {x_diff}, y_difference: {y_diff}")
 
     def yaw_from_quaternion(self, q):
