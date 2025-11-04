@@ -413,10 +413,7 @@ class Grid():
             y = abs(path[current][1] - current[1]) # diff in y between the shortest path to current node and the current node, binary
             for i in self.check_neighbors(current): # it returns all the  avalible neighbors
                 if abs(i[0] - current[0]) == abs(i[1] - current[1]): # if diaganol path
-                    if abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y: # penalize more if change direction
-                        diff = 1.4
-                    else:
-                        diff = 1.2
+                    diff = 1.2
                 elif abs(i[0]-current[0]) != x or abs(i[1]-current[1]) != y: # if adjacent movement, penalize more if change direction
                     diff = 1.3
                 else:
