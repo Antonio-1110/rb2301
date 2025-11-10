@@ -7,6 +7,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
+import time
 
 np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to specified d.p., suppress scientific notation and do not truncate
 set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
@@ -35,9 +36,11 @@ class ObstacleCourseNode(Node):
 
         if is_simulation:
             self.max_translate_velocity = 1.4
-            self.goal_coordinates = np.array((5.2, -2.6))
+            self.goal_coordinates = np.array((4.8, -2.6))
+            self.mid_point = np.array((3.21, -3.6))
         else:
             self.max_translate_velocity = 0.3 # Please keep this in place; 0.3m/s is more than fast enough 
+            self.mid_point = np.array((3.21, -3.6)) #tp be confirmed in real life
             self.goal_coordinates = np.array((5.2, -2.6))
 
         self.sub_scan = self.create_subscription(LaserScan, "scan", self.sub_scan_callback, 2) # Subscribe to LiDAR scan data
@@ -59,6 +62,14 @@ class ObstacleCourseNode(Node):
         self.timer = self.create_timer(0.05, self.timer_callback)  # Runs at 20Hz. Can be changed.
 
         self.pose = None
+        self.last_scan = None
+        self.declare_parameter('turning', False)
+        self.threshold = 0.16
+        self.last_move = "start"
+        self.know_direction = True
+        self.threshold_offset = 0.06
+        self.fb_range = 30
+        self.lr_range = 33
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -66,6 +77,7 @@ class ObstacleCourseNode(Node):
             self.last_scan = np.array(msg.ranges)
         else:
             self.last_scan = np.array(msg.ranges)[::2] 
+        self.update_data()
 
     def yaw_from_quaternion(self, q):
         '''Returns yaw angle (in rad) for orientation based on given quaternion input q'''
@@ -98,6 +110,55 @@ class ObstacleCourseNode(Node):
         twist_msg.linear.x, twist_msg.linear.y, twist_msg.linear.z = float(x), float(y), 0.0
         twist_msg.angular.x, twist_msg.angular.y, twist_msg.angular.z = 0.0, 0.0, float(turn)
         self.publisher_.publish(twist_msg)
+    
+    def keep_straight(self):
+        if abs(self.pose[2]) > 2:
+            return -self.pose[2]
+        return 0
+    
+    def obstacle_angle(self, data=list):
+        obstacles = []
+        starting = 0
+        for i, _ in enumerate(data):
+            # print(f'degree = {i}, value = {_}')
+            if abs(data[starting] - data[i+1 if i+1 < 360 else 0]) > 0.05: # checking should be more robust than this
+                ending = i
+                if ending - starting > 6  and 0.08 < abs(data[starting]) < 1:
+                    obstacles.append((starting, ending))
+                starting = i+1
+        if 359 - starting > 6 and 0.08 < abs(data[starting]) < 1:
+            obstacles.append((starting, 359))
+        return obstacles
+    
+    def update_data(self):
+        self.cal_y = []
+        self.cal_x = []
+        for i, value in enumerate(self.last_scan):
+            self.cal_x.append(abs(np.cos(np.deg2rad(i+self.pose[2]))*value)) # might need to adjust to (0 to 360) from (-180 to 180)
+            self.cal_y.append(abs(np.sin(np.deg2rad(i+self.pose[2]))*value)) # it becomes wierd when heading is not zero
+        self.front = True
+        self.back = True
+        self.left = True
+        self.right = True
+        for i in range(self.fb_range+1):
+            if self.cal_x[i] < self.threshold and self.cal_y[i] < self.threshold or self.cal_x[i+359-self.fb_range] < self.threshold and self.cal_y[i+359-self.fb_range] < self.threshold: # check front right and front left
+                self.front = False
+            if self.cal_x[i+180-self.fb_range] < self.threshold + self.threshold_offset and self.cal_y[i+180-self.fb_range] < self.threshold or self.cal_x[i+181] < self.threshold + 0.07 and self.cal_y[i+181] < self.threshold: # extra offset because lidar is not in the center of the robot
+                self.back = False
+        for i in range(self.lr_range+1):
+            if self.cal_y[i+99-self.lr_range] < self.threshold and self.cal_x[i+99-self.lr_range] < self.threshold or self.cal_y[i+99] < self.threshold and self.cal_x[i+99] < self.threshold + self.threshold_offset:
+                self.left = False
+            if self.cal_y[i+262-self.lr_range] < self.threshold and self.cal_x[i+262-self.lr_range] < self.threshold + self.threshold_offset or self.cal_y[i+265] < self.threshold and self.cal_x[i+265] < self.threshold:
+                self.right = False
+        if self.last_move == "back" and not self.right or self.last_move == "start" and not self.right:
+            self.last_move = "right"
+        elif self.last_move == "right" and not self.front:
+            self.last_move = "front"
+        elif self.last_move == "front" and not self.left:
+            self.last_move = "left"
+        elif self.last_move == "left" and not self.back:
+            self.last_move = "back"
+    
 
     def timer_callback(self):
         """Controller loop. Insert path planning and PID control logic here"""
@@ -110,8 +171,52 @@ class ObstacleCourseNode(Node):
             raise SystemExit
         
         ###### INSERT CODE HERE ######
+        if self.last_scan is None:
+            return
         self.get_logger().info(f"Pose: {self.pose}")
-        self.move_2D(0.1)
+        if self.get_parameter('turning').value:
+            self.move_2D(0,0,3)
+        else:
+            y_vel = 0
+            x_vel = 0
+            # irl when the robot is at mid-point no going back
+            # scenario one go after detect and dissapear
+            # go after a certain amount of time (not swing anymore)
+            if self.last_move == "start":
+                self.move_2D(0,-0.5,self.keep_straight())
+            if self.front and self.back and self.left and self.right and self.know_direction:
+                pass
+            else:
+                self.know_direction = False
+                if self.last_move == "back":
+                    if not self.back:
+                        y_vel = -0.5
+                    else:
+                        x_vel = -0.5
+                        self.last_move = "left"
+                        self.know_direction = True
+                elif self.last_move == "right":
+                    if not self.right:
+                        x_vel = 0.5
+                    else:
+                        y_vel = -0.5
+                        self.last_move = "back"
+                        self.know_direction = True
+                elif self.last_move == "front":
+                    if not self.front:
+                        y_vel = 0.5
+                    else:
+                        x_vel = 0.5
+                        self.last_move = "right"
+                        self.know_direction = True
+                elif self.last_move == "left":
+                    if not self.left:
+                        x_vel = -0.5
+                    else:
+                        y_vel = 0.5
+                        self.last_move = "front"
+                        self.know_direction = True
+                self.move_2D(x_vel,y_vel,self.keep_straight())
         ###### INSERT CODE HERE ######
                 
 
