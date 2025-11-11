@@ -67,9 +67,11 @@ class ObstacleCourseNode(Node):
         self.threshold = 0.16
         self.last_move = "start"
         self.know_direction = True
-        self.threshold_offset = 0.06
-        self.fb_range = 30
-        self.lr_range = 33
+        self.threshold_offset = 0.08
+        self.f_range = (28,331)
+        self.b_range = (153,207)
+        self.r_range = (222,284)
+        self.l_range = (68,130)
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -136,20 +138,18 @@ class ObstacleCourseNode(Node):
         for i, value in enumerate(self.last_scan):
             self.cal_x.append(abs(np.cos(np.deg2rad(i+self.pose[2]))*value)) # might need to adjust to (0 to 360) from (-180 to 180)
             self.cal_y.append(abs(np.sin(np.deg2rad(i+self.pose[2]))*value)) # it becomes wierd when heading is not zero
-        self.front = True
-        self.back = True
-        self.left = True
-        self.right = True
-        for i in range(self.fb_range+1):
-            if self.cal_x[i] < self.threshold and self.cal_y[i] < self.threshold or self.cal_x[i+359-self.fb_range] < self.threshold and self.cal_y[i+359-self.fb_range] < self.threshold: # check front right and front left
-                self.front = False
-            if self.cal_x[i+180-self.fb_range] < self.threshold + self.threshold_offset and self.cal_y[i+180-self.fb_range] < self.threshold or self.cal_x[i+181] < self.threshold + 0.07 and self.cal_y[i+181] < self.threshold: # extra offset because lidar is not in the center of the robot
+        if min(self.cal_x[0:self.f_range[0]]) < self.threshold and min(self.cal_y[0:self.f_range[0]]) < self.threshold or min(self.cal_x[self.f_range[1]:]) < self.threshold and min(self.cal_y[self.f_range[1]:]) < self.threshold: # check front right and front left
+            self.front = False
+        else: self.front = True
+        if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.threshold + self.threshold_offset and min(self.cal_y[self.b_range[0]:self.b_range[1]]) < self.threshold: # extra offset because lidar is not in the center of the robot
                 self.back = False
-        for i in range(self.lr_range+1):
-            if self.cal_y[i+99-self.lr_range] < self.threshold and self.cal_x[i+99-self.lr_range] < self.threshold or self.cal_y[i+99] < self.threshold and self.cal_x[i+99] < self.threshold + self.threshold_offset:
-                self.left = False
-            if self.cal_y[i+262-self.lr_range] < self.threshold and self.cal_x[i+262-self.lr_range] < self.threshold + self.threshold_offset or self.cal_y[i+265] < self.threshold and self.cal_x[i+265] < self.threshold:
-                self.right = False
+        else: self.back = True
+        if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.threshold and min(self.cal_x[self.l_range[0]:self.l_range[1]]) < self.threshold + self.threshold_offset:
+            self.left = False
+        else: self.left = True
+        if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.threshold and min(self.cal_x[self.r_range[0]:self.r_range[1]]) < self.threshold + self.threshold_offset:
+            self.right = False
+        else: self.right = True
         if self.last_move == "back" and not self.right or self.last_move == "start" and not self.right:
             self.last_move = "right"
         elif self.last_move == "right" and not self.front:
@@ -182,38 +182,48 @@ class ObstacleCourseNode(Node):
             # irl when the robot is at mid-point no going back
             # scenario one go after detect and dissapear
             # go after a certain amount of time (not swing anymore)
+            # need to maintain a certain distance away from the wall
             if self.last_move == "start":
-                self.move_2D(0,-0.5,self.keep_straight())
+                print(2)
+                self.move_2D(0,-0.18,self.keep_straight())
+                return
             if self.front and self.back and self.left and self.right and self.know_direction:
-                pass
+                print(1)
+                return
             else:
+                print(
+                    self.front,
+                    self.right,
+                    self.back,
+                    self.left
+                )
                 self.know_direction = False
                 if self.last_move == "back":
                     if not self.back:
-                        y_vel = -0.5
+                        y_vel = -0.15
                     else:
-                        x_vel = -0.5
+                        x_vel = -0.15
                         self.last_move = "left"
                         self.know_direction = True
                 elif self.last_move == "right":
                     if not self.right:
-                        x_vel = 0.5
+                        x_vel = 0.15
                     else:
-                        y_vel = -0.5
+                        y_vel = -0.15
                         self.last_move = "back"
                         self.know_direction = True
                 elif self.last_move == "front":
                     if not self.front:
-                        y_vel = 0.5
+                        y_vel = 0.15
                     else:
-                        x_vel = 0.5
+                        x_vel = 0.15
                         self.last_move = "right"
                         self.know_direction = True
                 elif self.last_move == "left":
                     if not self.left:
-                        x_vel = -0.5
+                        x_vel = -0.15
                     else:
-                        y_vel = 0.5
+                        y_vel = 0.15
                         self.last_move = "front"
                         self.know_direction = True
                 self.move_2D(x_vel,y_vel,self.keep_straight())
