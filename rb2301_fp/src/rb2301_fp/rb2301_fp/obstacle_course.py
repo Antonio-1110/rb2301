@@ -68,7 +68,8 @@ class ObstacleCourseNode(Node):
         self.last_move = "start"
         self.know_direction = True
         self.threshold_offset = 0.08
-        self.f_range = (28,331)
+        self.too_close = 0.1
+        self.f_range = (28,330)
         self.b_range = (153,207)
         self.r_range = (222,284)
         self.l_range = (68,130)
@@ -79,7 +80,6 @@ class ObstacleCourseNode(Node):
             self.last_scan = np.array(msg.ranges)
         else:
             self.last_scan = np.array(msg.ranges)[::2] 
-        self.update_data()
 
     def yaw_from_quaternion(self, q):
         '''Returns yaw angle (in rad) for orientation based on given quaternion input q'''
@@ -138,17 +138,33 @@ class ObstacleCourseNode(Node):
         for i, value in enumerate(self.last_scan):
             self.cal_x.append(abs(np.cos(np.deg2rad(i+self.pose[2]))*value)) # might need to adjust to (0 to 360) from (-180 to 180)
             self.cal_y.append(abs(np.sin(np.deg2rad(i+self.pose[2]))*value)) # it becomes wierd when heading is not zero
+        # Front
         if min(self.cal_x[0:self.f_range[0]]) < self.threshold and min(self.cal_y[0:self.f_range[0]]) < self.threshold or min(self.cal_x[self.f_range[1]:]) < self.threshold and min(self.cal_y[self.f_range[1]:]) < self.threshold: # check front right and front left
             self.front = False
+            if min(self.cal_x[0:self.f_range[0]]) < self.too_close or min(self.cal_x[self.f_range[1]:]) < self.too_close:
+                self.f_too_close = True
+            else: self.f_too_close = False
         else: self.front = True
+        # Back
         if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.threshold + self.threshold_offset and min(self.cal_y[self.b_range[0]:self.b_range[1]]) < self.threshold: # extra offset because lidar is not in the center of the robot
                 self.back = False
+                if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.too_close + self.threshold_offset:
+                    self.b_too_close = True
+                else: self.b_too_close = False
         else: self.back = True
+        # Left
         if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.threshold and min(self.cal_x[self.l_range[0]:self.l_range[1]]) < self.threshold + self.threshold_offset:
             self.left = False
+            if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.too_close:
+                self.l_too_close = True
+            else: self.l_too_close = False
         else: self.left = True
+        # Right
         if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.threshold and min(self.cal_x[self.r_range[0]:self.r_range[1]]) < self.threshold + self.threshold_offset:
             self.right = False
+            if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.too_close :
+                    self.r_too_close = True
+            else: self.r_too_close = False
         else: self.right = True
         if self.last_move == "back" and not self.right or self.last_move == "start" and not self.right:
             self.last_move = "right"
@@ -173,16 +189,14 @@ class ObstacleCourseNode(Node):
         ###### INSERT CODE HERE ######
         if self.last_scan is None:
             return
+        self.update_data()
         self.get_logger().info(f"Pose: {self.pose}")
         if self.get_parameter('turning').value:
             self.move_2D(0,0,3)
         else:
-            y_vel = 0
-            x_vel = 0
             # irl when the robot is at mid-point no going back
             # scenario one go after detect and dissapear
             # go after a certain amount of time (not swing anymore)
-            # need to maintain a certain distance away from the wall
             if self.last_move == "start":
                 print(2)
                 self.move_2D(0,-0.18,self.keep_straight())
@@ -191,39 +205,49 @@ class ObstacleCourseNode(Node):
                 print(1)
                 return
             else:
-                print(
-                    self.front,
-                    self.right,
-                    self.back,
-                    self.left
-                )
                 self.know_direction = False
                 if self.last_move == "back":
                     if not self.back:
                         y_vel = -0.15
+                        if self.b_too_close:
+                            x_vel = 0.15
+                        else: x_vel = 0
                     else:
                         x_vel = -0.15
+                        y_vel = 0
                         self.last_move = "left"
                         self.know_direction = True
                 elif self.last_move == "right":
                     if not self.right:
                         x_vel = 0.15
+                        if self.r_too_close:
+                            y_vel = 0.15
+                        else: y_vel = 0
                     else:
                         y_vel = -0.15
+                        x_vel = 0
                         self.last_move = "back"
                         self.know_direction = True
                 elif self.last_move == "front":
                     if not self.front:
                         y_vel = 0.15
+                        if self.f_too_close:
+                            x_vel = -0.15
+                        else: x_vel = 0
                     else:
                         x_vel = 0.15
+                        y_vel = 0
                         self.last_move = "right"
                         self.know_direction = True
                 elif self.last_move == "left":
                     if not self.left:
                         x_vel = -0.15
+                        if self.l_too_close:
+                            y_vel = -0.15
+                        else: y_vel = 0
                     else:
                         y_vel = 0.15
+                        x_vel = 0
                         self.last_move = "front"
                         self.know_direction = True
                 self.move_2D(x_vel,y_vel,self.keep_straight())

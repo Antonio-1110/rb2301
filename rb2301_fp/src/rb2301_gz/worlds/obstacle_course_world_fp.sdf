@@ -162,89 +162,89 @@
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_4</name>
-      <pose>1.0088315975455657 0 -0.7 0 0 0</pose>
+      <pose>0.6333047412283279 0 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_5</name>
-      <pose>1.0088315975455657 -1.2 -0.7 0 0 0</pose>
+      <pose>0.6333047412283279 -1.2 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_6</name>
-      <pose>2.208831597545566 0 -0.7 0 0 0</pose>
+      <pose>1.8333047412283279 0 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_7</name>
-      <pose>2.208831597545566 -1.2 -0.7 0 0 1.57079633</pose>
+      <pose>1.8333047412283279 -1.2 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_8</name>
-      <pose>3.408831597545566 0 -0.7 0 0 1.57079633</pose>
+      <pose>3.033304741228328 0 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_9</name>
-      <pose>2.208831597545566 -2.4 -0.7 0 0 1.57079633</pose>
+      <pose>1.8333047412283279 -2.4 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_10</name>
-      <pose>3.408831597545566 -1.2 -0.7 0 0 1.57079633</pose>
+      <pose>3.033304741228328 -1.2 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_11</name>
-      <pose>2.208831597545566 -3.3473060395793133 -0.7 0 0 1.57079633</pose>
+      <pose>1.8333047412283279 -2.884171766262558 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_12</name>
-      <pose>3.408831597545566 -2.4 -0.7 0 0 0</pose>
+      <pose>3.033304741228328 -2.4 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_13</name>
-      <pose>2.208831597545566 -4.547306039579313 -0.7 0 0 0</pose>
+      <pose>1.8333047412283279 -4.084171766262559 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_14</name>
-      <pose>3.408831597545566 -4.547306039579313 -0.7 0 0 0</pose>
+      <pose>3.033304741228328 -4.084171766262559 -0.7 0 0 0</pose>
     </include>
 
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_15</name>
-      <pose>4.608831597545565 -2.4 -0.7 0 0 0</pose>
+      <pose>4.233304741228328 -2.4 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_16</name>
-      <pose>4.608831597545565 -4.547306039579313 -0.7 0 0 0</pose>
+      <pose>4.233304741228328 -4.084171766262559 -0.7 0 0 0</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_17</name>
-      <pose>5.8088315975455656 -2.4 -0.7 0 0 1.57079633</pose>
+      <pose>5.433304741228328 -2.4 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_18</name>
-      <pose>5.8088315975455656 -3.3473060395793133 -0.7 0 0 1.57079633</pose>
+      <pose>5.433304741228328 -2.884171766262558 -0.7 0 0 1.57079633</pose>
     </include>
 
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_configurable_left</name>
-      <pose>4.008831597545566 -2.1032021019800404 -0.7 0 0 1.57079633</pose>
+      <pose>3.6333047412283284 -1.8530947310607688 -0.7 0 0 1.57079633</pose>
     </include>
     <include>
       <uri>package://rb2301_gz/meshes/nist maze wall 120/3</uri>
       <name>nist_maze_wall_120_configurable_right</name>
-      <pose>4.008831597545566 -3.7032021019800405 -0.7 0 0 1.57079633</pose>
+      <pose>3.6333047412283284 -3.453094731060769 -0.7 0 0 1.57079633</pose>
     </include>
 
     <actor name="obstacle_1">
@@ -270,15 +270,15 @@
         <trajectory id="0" type="square">
         <waypoint>
           <time>0.0</time>
-          <pose>4.008831597545566 -2.5473060395793135 0.15 0 0 0</pose>
+          <pose>3.6333047412283284 -2.0841717662625583 0.15 0 0 0</pose>
         </waypoint>
         <waypoint>
-          <time>4.42102566846674</time>
-          <pose>4.008831597545566 -3.7473060395793136 0.15 0 0 0</pose>
+          <time>2.3316249069753363</time>
+          <pose>3.6333047412283284 -3.2841717662625585 0.15 0 0 0</pose>
         </waypoint>
         <waypoint>
-          <time>8.84205133693348</time>
-          <pose>4.008831597545566 -2.5473060395793135 0.15 0 0 0</pose>
+          <time>4.663249813950673</time>
+          <pose>3.6333047412283284 -2.0841717662625583 0.15 0 0 0</pose>
         </waypoint>
         </trajectory>
       </script>
@@ -307,15 +307,15 @@
         <trajectory id="1" type="square">
         <waypoint>
           <time>0.0</time>
-          <pose>4.608831597545565 -2.5473060395793135 0.15 0 0 0</pose>
+          <pose>4.233304741228328 -2.0841717662625583 0.15 0 0 0</pose>
         </waypoint>
         <waypoint>
-          <time>2.337881594074604</time>
-          <pose>4.608831597545565 -3.7473060395793136 0.15 0 0 0</pose>
+          <time>5.443813415143628</time>
+          <pose>4.233304741228328 -3.2841717662625585 0.15 0 0 0</pose>
         </waypoint>
         <waypoint>
-          <time>4.675763188149208</time>
-          <pose>4.608831597545565 -2.5473060395793135 0.15 0 0 0</pose>
+          <time>10.887626830287257</time>
+          <pose>4.233304741228328 -2.0841717662625583 0.15 0 0 0</pose>
         </waypoint>
         </trajectory>
       </script>
@@ -341,5 +341,5 @@
       </spot>
     </light>
 
-  <include><uri>://rb2301_gz/meshes/drawer/2</uri><name>static_obstacle0</name><pose>0.2547592601134462 -0.2840021890278361 0 0 0 0</pose></include><include><uri>://rb2301_gz/meshes/coke/6</uri><name>static_obstacle1</name><pose>2.4177306756510886 -1.0709478577942422 0 0 0 0</pose></include><include><uri>://rb2301_gz/meshes/drawer/2</uri><name>static_obstacle2</name><pose>1.9011241690668217 -2.040640028629379 0 0 0 0</pose></include><include><uri>://rb2301_gz/meshes/drawer/2</uri><name>static_obstacle3</name><pose>2.5796486848991194 -3.042859256604739 0 0 0 0</pose></include></world>
+  <include><uri>://rb2301_gz/meshes/coke/6</uri><name>static_obstacle0</name><pose>0.4628454128165439 -0.005957081611881909 0 0 0 0</pose></include><include><uri>://rb2301_gz/meshes/litterbin/2</uri><name>static_obstacle1</name><pose>1.8339115535743817 -0.7082383435655134 0 0 0 0</pose></include><include><uri>://rb2301_gz/meshes/litterbin/2</uri><name>static_obstacle2</name><pose>1.5198200708485203 -1.6047514715190467 0 0 0 0</pose></include><include><uri>://rb2301_gz/meshes/litterbin/2</uri><name>static_obstacle3</name><pose>1.897055213499277 -2.3631327626992906 0 0 0 0</pose></include></world>
 </sdf>
