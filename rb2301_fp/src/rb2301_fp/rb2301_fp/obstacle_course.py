@@ -37,10 +37,8 @@ class ObstacleCourseNode(Node):
         if is_simulation:
             self.max_translate_velocity = 1.4
             self.goal_coordinates = np.array((4.8, -2.6))
-            self.mid_point = np.array((3.21, -3.6))
         else:
             self.max_translate_velocity = 0.3 # Please keep this in place; 0.3m/s is more than fast enough 
-            self.mid_point = np.array((3.21, -3.6)) #tp be confirmed in real life
             self.goal_coordinates = np.array((5.2, -2.6))
 
         self.sub_scan = self.create_subscription(LaserScan, "scan", self.sub_scan_callback, 2) # Subscribe to LiDAR scan data
@@ -53,26 +51,29 @@ class ObstacleCourseNode(Node):
 
             self.map_sub = self.create_subscription( 
                 PoseStamped,
-                '/vrpn_mocap/bingda_003/pose',
+                '/vrpn_mocap/bingda_009/pose',
                 self.optitrack_callback, 
                 qos_profile
                 )
             
-        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10) # Publish to cmd_vel node       
-        self.timer = self.create_timer(0.05, self.timer_callback)  # Runs at 20Hz. Can be changed.
+        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 5) # Publish to cmd_vel node queue size decreased to 5 to get newer messages  
+        self.timer = self.create_timer(0.02, self.timer_callback)  # Changed to 0.02 to get faster update about surrounding
 
         self.pose = None
         self.last_scan = None
+        self.obstacle = False
         self.declare_parameter('turning', False)
-        self.threshold = 0.16
+        self.threshold = 0.165
         self.last_move = "start"
         self.know_direction = True
         self.threshold_offset = 0.08
-        self.too_close = 0.1
-        self.f_range = (28,330)
-        self.b_range = (153,207)
-        self.r_range = (222,284)
-        self.l_range = (68,130)
+        self.too_close = 0.114
+        self.f_range = (22,338)
+        self.b_range = (154,206)
+        self.r_range = (231,290)
+        self.l_range = (70,129)
+        self.y_vel = 0
+        self.x_vel = 0
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -115,7 +116,7 @@ class ObstacleCourseNode(Node):
     
     def keep_straight(self):
         if abs(self.pose[2]) > 2:
-            return -self.pose[2]
+            return -self.pose[2]*0.9
         return 0
     
     def obstacle_angle(self, data=list):
@@ -199,58 +200,78 @@ class ObstacleCourseNode(Node):
             # go after a certain amount of time (not swing anymore)
             if self.last_move == "start":
                 print(2)
-                self.move_2D(0,-0.18,self.keep_straight())
+                self.move_2D(0,-0.14,self.keep_straight())
                 return
-            if self.front and self.back and self.left and self.right and self.know_direction:
-                print(1)
+            if self.pose[0] > 3.135: 
+                if self.front:
+                    self.move_2D(0.15,0,0)
+                else: self.move_2D(0,0,0)
                 return
+            if self.pose[0] > 2.09:
+                if self.right:
+                    self.move_2D(0,-0.13,self.keep_straight())
+                    return
+                if not self.front and not self.obstacle:
+                    self.obstacle = True
+                    self.last_pose = self.pose[0]
+                    self.move_2D(0,0,self.keep_straight())
+                if self.obstacle:
+                    if self.pose[0] < self.last_pose+0.5:
+                        if self.front: self.move_2D(0.3,0,self.keep_straight())
+                    else: 
+                        self.move_2D(0,0,self.keep_straight())
+                        self.obstacle = False
             else:
-                self.know_direction = False
-                if self.last_move == "back":
-                    if not self.back:
-                        y_vel = -0.15
-                        if self.b_too_close:
-                            x_vel = 0.15
-                        else: x_vel = 0
-                    else:
-                        x_vel = -0.15
-                        y_vel = 0
-                        self.last_move = "left"
-                        self.know_direction = True
-                elif self.last_move == "right":
-                    if not self.right:
-                        x_vel = 0.15
-                        if self.r_too_close:
-                            y_vel = 0.15
-                        else: y_vel = 0
-                    else:
-                        y_vel = -0.15
-                        x_vel = 0
-                        self.last_move = "back"
-                        self.know_direction = True
-                elif self.last_move == "front":
-                    if not self.front:
-                        y_vel = 0.15
-                        if self.f_too_close:
-                            x_vel = -0.15
-                        else: x_vel = 0
-                    else:
-                        x_vel = 0.15
-                        y_vel = 0
-                        self.last_move = "right"
-                        self.know_direction = True
-                elif self.last_move == "left":
-                    if not self.left:
-                        x_vel = -0.15
-                        if self.l_too_close:
-                            y_vel = -0.15
-                        else: y_vel = 0
-                    else:
-                        y_vel = 0.15
-                        x_vel = 0
-                        self.last_move = "front"
-                        self.know_direction = True
-                self.move_2D(x_vel,y_vel,self.keep_straight())
+                if self.front and self.back and self.left and self.right and self.know_direction:
+                    print(1)
+                    pass
+                else:
+                    self.know_direction = False
+                    if self.last_move == "back":
+                        if not self.back:
+                            self.y_vel = -0.15
+                            if self.b_too_close:
+                                self.x_vel = 0.05
+                            else: self.x_vel = 0
+                        else:
+                            self.x_vel = -0.15
+                            self.y_vel = 0
+                            self.last_move = "left"
+                            self.know_direction = True
+                    elif self.last_move == "right":
+                        if not self.right:
+                            self.x_vel = 0.15
+                            if self.r_too_close:
+                                self.y_vel = 0.05
+                            else: self.y_vel = 0
+                        else:
+                            self.y_vel = -0.15
+                            self.x_vel = 0
+                            self.last_move = "back"
+                            self.know_direction = True
+                    elif self.last_move == "front":
+                        if not self.front:
+                            self.y_vel = 0.15
+                            if self.f_too_close:
+                                self.x_vel = -0.05
+                            else: self.x_vel = 0
+                        else:
+                            self.x_vel = 0.15
+                            self.y_vel = 0
+                            self.last_move = "right"
+                            self.know_direction = True
+                    elif self.last_move == "left":
+                        if not self.left:
+                            self.x_vel = -0.15
+                            if self.l_too_close:
+                                self.y_vel = -0.05
+                            else: self.y_vel = 0
+                        else:
+                            self.y_vel = 0.15
+                            self.x_vel = 0
+                            self.last_move = "front"
+                            self.know_direction = True
+                self.move_2D(self.x_vel,self.y_vel,self.keep_straight())
         ###### INSERT CODE HERE ######
                 
 
