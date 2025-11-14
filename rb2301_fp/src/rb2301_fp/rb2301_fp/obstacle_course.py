@@ -53,7 +53,7 @@ class ObstacleCourseNode(Node):
 
             self.map_sub = self.create_subscription( 
                 PoseStamped,
-                '/vrpn_mocap/bingda_009/pose',
+                '/vrpn_mocap/bingda_007/pose',
                 self.optitrack_callback, 
                 qos_profile
                 )
@@ -61,22 +61,19 @@ class ObstacleCourseNode(Node):
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 5) # Publish to cmd_vel node queue size decreased to 5 to get newer messages  
         self.timer = self.create_timer(0.02, self.timer_callback)  # Changed to 0.02 to get faster update about surrounding
 
-        self.pose = None
-        self.last_scan = None
-        self.obstacle = False
-        self.has_left = False
-        self.know_direction = True
+        self.pose = self.last_scan = None
+        self.obstacle = self.has_left = self.has_right = self.has_back = self.has_front = self.know = False
         self.declare_parameter('turning', False)
-        self.last_move = "start"
-        self.threshold = 0.165
-        self.threshold_offset = 0.08
-        self.too_close = 0.114
-        self.f_range = (22,338)
-        self.b_range = (154,206)
-        self.r_range = (231,290)
-        self.l_range = (70,129)
-        self.y_vel = 0
-        self.x_vel = 0
+        self.move = "start"
+        self.f_threshold = 0.1525
+        self.b_threshold = 0.23
+        self.l_r_threshold = 0.177
+        self.too_close_offset  = 0.06 # larger means slower adjustment
+        self.f_range = (37,323)
+        self.b_range = (155,205)
+        self.r_range = (230,288)
+        self.l_range = (71,130)
+        self.y_vel = self.x_vel = 0
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -119,7 +116,7 @@ class ObstacleCourseNode(Node):
     
     def keep_straight(self):
         if abs(self.pose[2]) > 2:
-            return -self.pose[2]*0.9
+            return -self.pose[2]*0.7
         return 0
     
     def obstacle_angle(self, data=list):
@@ -143,30 +140,30 @@ class ObstacleCourseNode(Node):
             self.cal_x.append(abs(np.cos(np.deg2rad(i+self.pose[2]))*value))
             self.cal_y.append(abs(np.sin(np.deg2rad(i+self.pose[2]))*value)) # it becomes wierd when heading is not zero
         # Front
-        if min(self.cal_x[0:self.f_range[0]]) < self.threshold and min(self.cal_y[0:self.f_range[0]]) < self.threshold or min(self.cal_x[self.f_range[1]:]) < self.threshold and min(self.cal_y[self.f_range[1]:]) < self.threshold: # check front right and front left
+        if min(self.cal_x[0:self.f_range[0]]) < self.f_threshold or min(self.cal_x[self.f_range[1]:]) < self.f_threshold: # check front right and front left
             self.front = False
-            if min(self.cal_x[0:self.f_range[0]]) < self.too_close or min(self.cal_x[self.f_range[1]:]) < self.too_close:
+            if min(self.cal_x[0:self.f_range[0]]) < self.f_threshold - self.too_close_offset or min(self.cal_x[self.f_range[1]:]) < self.f_threshold - self.too_close_offset:
                 self.f_too_close = True
             else: self.f_too_close = False
         else: self.front, self.f_too_close = True, False
         # Back
-        if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.threshold + self.threshold_offset and min(self.cal_y[self.b_range[0]:self.b_range[1]]) < self.threshold: # extra offset because lidar is not in the center of the robot
+        if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.b_threshold and min(self.cal_y[self.b_range[0]:self.b_range[1]]) < self.l_r_threshold:
                 self.back = False
-                if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.too_close + self.threshold_offset:
+                if min(self.cal_x[self.b_range[0]:self.b_range[1]]) < self.b_threshold - self.too_close_offset:
                     self.b_too_close = True
                 else: self.b_too_close = False
         else: self.back, self.b_too_close = True, False
         # Left
-        if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.threshold and min(self.cal_x[self.l_range[0]:self.l_range[1]]) < self.threshold + self.threshold_offset:
+        if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.l_r_threshold:
             self.left = False
-            if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.too_close:
+            if min(self.cal_y[self.l_range[0]:self.l_range[1]]) < self.l_r_threshold - self.too_close_offset:
                 self.l_too_close = True
             else: self.l_too_close = False
         else: self.left, self.l_too_close = True, False
         # Right
-        if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.threshold and min(self.cal_x[self.r_range[0]:self.r_range[1]]) < self.threshold + self.threshold_offset:
+        if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.l_r_threshold:
             self.right = False
-            if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.too_close :
+            if min(self.cal_y[self.r_range[0]:self.r_range[1]]) < self.l_r_threshold - self.too_close_offset:
                     self.r_too_close = True
             else: self.r_too_close = False
         else: self.right, self.r_too_close = True, False
@@ -200,97 +197,153 @@ class ObstacleCourseNode(Node):
         if self.pose is None:
             print("No pose detected")
             return # Does not run if no pose received from Odom or Optitrack
-            
+        if self.last_scan is None:
+            return # Does not run if no lidar data received from lidar
         elif np.linalg.norm(self.pose[:2] - self.goal_coordinates) < 0.05: # If distance to goal is less than 0.05m, consider goal reached and exit
             self.get_logger().info("Goal reached! Exiting script")
             raise SystemExit
         
         ###### INSERT CODE HERE ######
-        if self.last_scan is None:
-            return
         self.update_data()
+        # print(
+        #     self.front,
+        #     self.back,
+        #     self.left,
+        #     self.right
+        # )
+        # return
         self.get_logger().info(f"Pose: {self.pose}")
+        # print(
+        #     min(self.cal_y[self.r_range[0]:self.r_range[1]])
+        #     )
+        # return
         if self.get_parameter('turning').value:
             self.move_2D(0,0,3)
         else:
-            if self.last_move == "start":
+            if self.move == "start":
                 print("starting")
-                if self.right: self.going_r()
-                else:self.last_move = "right"
-            elif self.pose[0] > 3.135 and not self.is_simulation: 
+                if -2 < self.pose[2] < 2: 
+                    if self.right: self.going_r()
+                    else: self.move = "front"
+                else: pass
+            elif self.pose[0] > 3.126 and not self.is_simulation: 
                 if self.front:self.going_f()
-                else: self.stop()
-            elif self.pose[0] > 2.09 and not self.is_simulation:
-                if self.right: self.going_r()
-                else:
+                else: 
+                    self.move_2D(0,0,0)
+                    self.get_logger().info("Goal reached! Exiting script")
+                    raise SystemExit
+            elif self.pose[0] > 2.16 and not self.is_simulation:
+                if self.right: self.y_vel = -0.15
+                else: 
+                    self.y_vel = 0
                     if not self.front and not self.obstacle:
                         self.obstacle = True
                         self.last_pose = self.pose[0]
-                        self.stop()
                     if self.obstacle:
-                        if self.pose[0] < self.last_pose+0.5:
-                            if self.front: self.move_2D(0.3,0,self.keep_straight()) 
-                            return
+                        if self.pose[0] < self.last_pose+0.52:
+                            if self.front: self.x_vel = 0.3
+                            else: self.x_vel = 0
                         else: 
-                            self.stop()
                             self.obstacle = False
+                    else:
+                        self.x_vel = 0
             else:
-                if self.front and self.back and self.left and self.right and self.know_direction:
-                    print("all true")
+                if self.front and self.back and self.right and self.left and self.know:
+                    pass
                 else:
-                    self.know_direction = False
-                    if self.last_move == "back":
-                        if not self.back:
-                            if self.right: self.going_r()
+                    self.know = False
+                    if self.move == "back":
+                        if self.back and self.left:
+                            self.know = True
+                            if self.has_left:
+                                self.going_l()
+                                self.move = "left"
                             else:
-                                self.stop()
-                                self.last_move = "right"
-                        else:
-                            print(1)
-                            self.going_b()
-                            self.last_move = "left"
-                            self.know_direction = True
-                    elif self.last_move == "right":
-                        if not self.right:
-                            if self.front: self.going_f()
-                            else:
-                                self.stop()
-                                self.last_move = "front"
-                        else:
-                            self.going_r()
-                            self.last_move = "back"
-                            self.know_direction = True
-                    elif self.last_move == "front":
-                        if not self.front:
-                            if self.left: self.going_l()
-                            else:
-                                self.stop()
-                                self.last_move = "left"
-                        else:
-                            self.going_f()
-                            self.last_move = "right"
-                            self.know_direction = True
-                    elif self.last_move == "left":
-                        if not self.left:
-                            self.has_left = True
-                            if self.back:
                                 self.going_b()
-                                print(2)
-                            else:
-                                self.stop()
-                                self.last_move = "back"
-                        elif self.has_left:
+                        elif self.left:
                             self.has_left = False
                             self.going_l()
-                            self.last_move = "front"
-                            self.know_direction = True
-                        elif self.back:
+                            self.move = "left"
+                        elif self.back: 
+                            self.has_left = True
                             self.going_b()
-                            print(3)
-                            self.know_direction = True
                         else:
+                            if self.right: self.going_r()
+                            else: self.stop()
+                            self.know = True
+                            self.move = "right"
+                            self.has_left = False
+                    elif self.move == "right":
+                        if self.right and self.back:
+                            self.know = True
+                            if self.has_back:
+                                self.going_b()
+                                self.move = "back"
+                            else:
+                                self.going_r()
+                        elif self.back:
+                            self.has_back = False
+                            self.going_b()
+                            self.move = "back"
+                        elif self.right: 
+                            self.has_back = True
                             self.going_r()
-                            self.last_move = "back"
+                        else:
+                            if self.front: self.going_f()
+                            else: self.stop()
+                            self.know = True
+                            self.move = "front"
+                            self.has_back = False
+                    elif self.move == "front":
+                        if self.front and self.right:
+                            self.know = True
+                            if self.has_right:
+                                self.going_r()
+                                self.move = "right"
+                            else:
+                                self.going_f()
+                        elif self.right:
+                            self.has_right = False
+                            self.going_r()
+                            self.move = "right"
+                        elif self.front: 
+                            self.has_right = True
+                            self.going_f()
+                        else:
+                            if self.left:self.going_l()
+                            else: self.stop()
+                            self.know = True
+                            self.move = "left"
+                            self.has_right = False
+                    elif self.move == "left":
+                        if self.left and self.front:
+                            self.know = True
+                            if self.has_front:
+                                self.going_f()
+                                self.move = "front"
+                            else:
+                                self.going_l()
+                        elif self.front:
+                            self.has_front = False
+                            self.going_f()
+                            self.move = "front"
+                        elif self.left: 
+                            self.has_front = True
+                            self.going_l()
+                        else:
+                            if self.back: self.going_b()
+                            else: self.stop()
+                            self.know = True
+                            self.move = "back"
+                            self.has_front = False
+                            
+        print(
+            self.front,
+            self.back,
+            self.left,
+            self.right,
+            self.move
+        )
         self.move_2D(self.x_vel,self.y_vel,self.keep_straight())
         ###### INSERT CODE HERE ######
                 
