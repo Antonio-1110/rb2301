@@ -62,18 +62,18 @@ class ObstacleCourseNode(Node):
         self.timer = self.create_timer(0.02, self.timer_callback)  # Changed to 0.02 to get faster update about surrounding
 
         self.pose = self.last_scan = None
-        self.obstacle = self.has_left = self.has_right = self.has_back = self.has_front = self.know = False
+        self.obstacle = self.has_left = self.has_right = self.has_back = self.has_front = self.know = False # avalibility in each direction and know is to prevent the robot from keep making decision when every direction is avalible and obstacle is to record whether there is an obstacle appeared before during the dynamic obstacle part
         self.declare_parameter('turning', False)
-        self.move = "start"
-        self.f_threshold = 0.1525
-        self.b_threshold = 0.23
-        self.l_r_threshold = 0.177
-        self.too_close_offset  = 0.06 # larger means slower adjustment
-        self.f_range = (37,323)
-        self.b_range = (155,205)
-        self.r_range = (230,288)
-        self.l_range = (71,130)
-        self.y_vel = self.x_vel = 0
+        self.move = "start" # keeps track of current move
+        self.f_threshold = 0.1525 # distance threshold to deem there is obstacle in front
+        self.b_threshold = 0.23 # distance threshold to deem there is obstacle in back
+        self.l_r_threshold = 0.177 # distance threshold to deem there is obstacle in left or right
+        self.too_close_offset  = 0.06 # push off from the wall when the robot is getting too close to the wall
+        self.f_range = (37,323) # angle range in front
+        self.b_range = (155,205) # angle range in back
+        self.r_range = (230,288) # angle range in right
+        self.l_range = (71,130) # angle range in left
+        self.y_vel = self.x_vel = 0 # initialize velocity variables
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -114,12 +114,12 @@ class ObstacleCourseNode(Node):
         twist_msg.angular.x, twist_msg.angular.y, twist_msg.angular.z = 0.0, 0.0, float(turn)
         self.publisher_.publish(twist_msg)
     
-    def keep_straight(self):
-        if abs(self.pose[2]) > 2:
-            return -self.pose[2]*0.7
-        return 0
+    def keep_straight(self): # keep the robot facing forward
+        if abs(self.pose[2]) > 2: # when the heading deviates more than 2 degrees from 0
+            return -self.pose[2]*0.7 # return the reverse of the deviation to correct it, with a coefficient of 0.7
+        return 0 # if no deviation then returns zero
     
-    def obstacle_angle(self, data=list):
+    def obstacle_angle(self, data=list): # not used
         obstacles = []
         starting = 0
         for i, _ in enumerate(data):
@@ -133,17 +133,17 @@ class ObstacleCourseNode(Node):
             obstacles.append((starting, 359))
         return obstacles
     
-    def update_data(self):
-        self.cal_y = []
-        self.cal_x = []
+    def update_data(self): # update the cal_y, cal_x list, and the avaliability of each direction and whether they are too close to the wall
+        self.cal_y = [] # list storing the y distance in each angle
+        self.cal_x = [] # list storing the x distance in each angle
         for i, value in enumerate(self.last_scan):
             self.cal_x.append(abs(np.cos(np.deg2rad(i+self.pose[2]))*value))
-            self.cal_y.append(abs(np.sin(np.deg2rad(i+self.pose[2]))*value)) # it becomes wierd when heading is not zero
+            self.cal_y.append(abs(np.sin(np.deg2rad(i+self.pose[2]))*value)) # becomes wierd when heading is not zero
         # Front
         if min(self.cal_x[0:self.f_range[0]]) < self.f_threshold or min(self.cal_x[self.f_range[1]:]) < self.f_threshold: # check front right and front left
-            self.front = False
+            self.front = False # if it is less than threshold then is not avaliable
             if min(self.cal_x[0:self.f_range[0]]) < self.f_threshold - self.too_close_offset or min(self.cal_x[self.f_range[1]:]) < self.f_threshold - self.too_close_offset:
-                self.f_too_close = True
+                self.f_too_close = True # check if it is too close
             else: self.f_too_close = False
         else: self.front, self.f_too_close = True, False
         # Back
@@ -205,75 +205,64 @@ class ObstacleCourseNode(Node):
         
         ###### INSERT CODE HERE ######
         self.update_data()
-        # print(
-        #     self.front,
-        #     self.back,
-        #     self.left,
-        #     self.right
-        # )
-        # return
         self.get_logger().info(f"Pose: {self.pose}")
-        # print(
-        #     min(self.cal_y[self.r_range[0]:self.r_range[1]])
-        #     )
-        # return
-        if self.get_parameter('turning').value:
+        if self.get_parameter('turning').value: # was going to do heading but could not make it happen
             self.move_2D(0,0,3)
         else:
-            if self.move == "start":
+            if self.move == "start": # the robot will move to the rightmost position when the node is initialized
                 print("starting")
-                if -2 < self.pose[2] < 2: 
-                    if self.right: self.going_r()
-                    else: self.move = "front"
-                else: pass
-            elif self.pose[0] > 3.126 and not self.is_simulation: 
-                if self.front:self.going_f()
-                else: 
+                if -2 < self.pose[2] < 2: # when the robot is not facing zero then it will adjust it first or else the cal_x and cal_y would be affected and messing up the avaliability of each direction
+                    if self.right: self.going_r # when the robot is facing zero then move to the right
+                    else: self.move = "front" # once moved to the rightmost position then move forward i.e. front
+                else: pass # pass because keep_straight() is always called
+            elif self.pose[0] > 3.126 and not self.is_simulation: # when the robot is not in simulation it will stop when the x coordinates passed a certain value(hard coded so there is limitation)
+                if self.front:self.going_f() # if there is still space in front move forward
+                else: # else stop and exit
                     self.move_2D(0,0,0)
                     self.get_logger().info("Goal reached! Exiting script")
                     raise SystemExit
-            elif self.pose[0] > 2.16 and not self.is_simulation:
-                if self.right: self.y_vel = -0.15
+            elif self.pose[0] > 2.16 and not self.is_simulation: # when the robot reaches dynamix obstacle stage, again limitation exist because the coordinates are hard coded
+                if self.right: self.y_vel = -0.15 # move to the rightmost position to have maximum time to pass the obstacle before it swings back
                 else: 
-                    self.y_vel = 0
-                    if not self.front and not self.obstacle:
-                        self.obstacle = True
-                        self.last_pose = self.pose[0]
-                    if self.obstacle:
-                        if self.pose[0] < self.last_pose+0.52:
-                            if self.front: self.x_vel = 0.3
-                            else: self.x_vel = 0
+                    self.y_vel = 0 # stop moving right if already at the rightmost position
+                    if not self.front and not self.obstacle: # if there is obstacle in front and obstacle has not appear yet
+                        self.obstacle = True # record obstacle has appeared
+                        self.last_pose = self.pose[0] # record current x coordinates
+                    if self.obstacle: # when the obstacle has appeared and disappeared again meaning that the obstacle has just leave the FOV of the robot
+                        if self.pose[0] < self.last_pose+0.52: # move forward 0.52 
+                            if self.front: self.x_vel = 0.3 # with maximum speed
+                            else: self.x_vel = 0 # when there is not obstacle in front
                         else: 
-                            self.obstacle = False
+                            self.obstacle = False # once in position for the second dynamic obstacle then set the obstacle has appeared variable to False again
                     else:
-                        self.x_vel = 0
+                        self.x_vel = 0 # wait until obstacle has appeared and disappeared
             else:
-                if self.front and self.back and self.right and self.left and self.know:
+                if self.front and self.back and self.right and self.left and self.know: # to stop the robot from constantly making decision when every direction is avaliable
                     pass
                 else:
                     self.know = False
-                    if self.move == "back":
-                        if self.back and self.left:
+                    if self.move == "back": # if the robot is going backwards
+                        if self.back and self.left: # if both left and back is avaliable
                             self.know = True
-                            if self.has_left:
-                                self.going_l()
-                                self.move = "left"
+                            if self.has_left: # if there left has been NOT avaliable
+                                self.going_l() # robot explore left
+                                self.move = "left" # change current move to left
                             else:
-                                self.going_b()
-                        elif self.left:
-                            self.has_left = False
-                            self.going_l()
+                                self.going_b() # if there has not been a left wall then go back
+                        elif self.left: # if only left is avalible
+                            self.has_left = False # reset the variable
+                            self.going_l() # goes left
                             self.move = "left"
-                        elif self.back: 
-                            self.has_left = True
-                            self.going_b()
-                        else:
-                            if self.right: self.going_r()
-                            else: self.stop()
+                        elif self.back: # if only back is avalible 
+                            self.has_left = True # mark down that left has not been avaliable
+                            self.going_b() # goes back
+                        else: # if both back and left are not avalible
+                            if self.right: self.going_r() # if right is avaliable then goes straight to right
+                            else: self.stop() # else stop and let the if self.move == "right" handle the decision making
                             self.know = True
                             self.move = "right"
                             self.has_left = False
-                    elif self.move == "right":
+                    elif self.move == "right": # similar logic applied to the rest of the direction
                         if self.right and self.back:
                             self.know = True
                             if self.has_back:
