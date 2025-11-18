@@ -247,10 +247,11 @@ class ObstacleCourseNode(Node):
                             if self.has_left: # if there left has been NOT avaliable
                                 self.going_l() # robot explore left
                                 self.move = "left" # change current move to left
+                                self.has_left = False # resets variable
                             else:
                                 self.going_b() # if there has not been a left wall then go back
                         elif self.left: # if only left is avalible
-                            self.has_left = False # reset the variable
+                            self.has_left = False # resets variable
                             self.going_l() # goes left
                             self.move = "left"
                         elif self.back: # if only back is avalible 
@@ -268,6 +269,7 @@ class ObstacleCourseNode(Node):
                             if self.has_back:
                                 self.going_b()
                                 self.move = "back"
+                                self.has_back = False
                             else:
                                 self.going_r()
                         elif self.back:
@@ -289,6 +291,7 @@ class ObstacleCourseNode(Node):
                             if self.has_right:
                                 self.going_r()
                                 self.move = "right"
+                                self.has_right = False
                             else:
                                 self.going_f()
                         elif self.right:
@@ -310,6 +313,7 @@ class ObstacleCourseNode(Node):
                             if self.has_front:
                                 self.going_f()
                                 self.move = "front"
+                                self.has_front = False
                             else:
                                 self.going_l()
                         elif self.front:
